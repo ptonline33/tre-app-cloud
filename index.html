@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TRE Practice App</title>
+  <meta name="description" content="Tension & Trauma Releasing Exercises: guided practice, journal, and stats." />
+  <meta name="theme-color" content="#5a87b0" />
+  <link rel="manifest" href="/static/manifest.webmanifest" />
+  <link rel="icon" href="/static/icon-192.png" sizes="192x192" />
+  <link rel="apple-touch-icon" href="/static/icon-192.png" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">&#126;</span>
+      <div>
+        <h1>TRE Practice</h1>
+        <p class="tagline">Tension &amp; Trauma Releasing Exercises</p>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab" data-tab="exercises">Exercises</button>
+      <button class="tab" data-tab="meditate">Meditate</button>
+      <button class="tab" data-tab="session">Guided Session</button>
+      <button class="tab" data-tab="journal">Journal</button>
+      <button class="tab" data-tab="history">History</button>
+      <button class="tab" data-tab="stats">Stats</button>
+      <button class="tab install-btn" id="install-btn" hidden>Install App</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ===== EXERCISES ===== -->
+    <section id="tab-exercises" class="panel active">
+      <div class="panel-head">
+        <h2>All 7 Exercises</h2>
+        <p class="hint">Tap an exercise to see the steps and a guided video. Always self-regulated &mdash; you are in control and can stop anytime.</p>
+      </div>
+
+      <div class="quick-card" id="quick-card">
+        <h3>Quick Essentials &mdash; low on time?</h3>
+        <p class="hint">The 2 most important exercises to trigger the tremor quickly:</p>
+        <div class="quick-items">
+          <div class="quick-item"><span class="ex-num">6</span> Wall Sit</div>
+          <span class="quick-arrow">&rarr;</span>
+          <div class="quick-item"><span class="ex-num">8</span> Starting the Tremor</div>
+        </div>
+        <button class="btn primary" id="quick-open">View Quick Routine</button>
+      </div>
+
+      <div class="exercise-list" id="exercise-list"></div>
+
+      <div class="modal-overlay hidden" id="modal-overlay">
+        <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+          <button class="modal-close" id="modal-close" aria-label="Close" title="Close">&times;</button>
+          <div class="modal-body" id="modal-body"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== MEDITATE ===== -->
+    <section id="tab-meditate" class="panel">
+      <div class="panel-head">
+        <h2>Meditation Timer</h2>
+        <p class="hint">Choose a style and a duration. A bell rings to begin and to end your sit. Completed sessions are logged to your stats automatically.</p>
+      </div>
+
+      <div class="med-grid">
+        <div class="card med-main">
+          <h3>Set Up Your Sit</h3>
+
+          <label for="med-type">Type of meditation</label>
+          <select id="med-type">
+            <option value="Breath">Breath</option>
+            <option value="Self-Inquiry">Self-Inquiry</option>
+            <option value="Vipassana">Vipassana</option>
+            <option value="Mantra">Mantra</option>
+            <option value="Detachment">Detachment</option>
+            <option value="Walking">Walking meditation</option>
+            <option value="Sound">Sound</option>
+            <option value="Muse">Muse</option>
+            <option value="Other">Other</option>
+          </select>
+
+          <div id="med-custom-wrap" class="custom-type hidden">
+            <label for="med-type-custom">Name your type</label>
+            <input type="text" id="med-type-custom" placeholder="e.g. Metta, Body scan, Loving-kindness" maxlength="40" />
+          </div>
+
+          <label for="med-minutes">Duration (minutes)</label>
+          <div class="presets" id="med-presets">
+            <button class="chip" data-min="5">5</button>
+            <button class="chip" data-min="10">10</button>
+            <button class="chip active" data-min="15">15</button>
+            <button class="chip" data-min="20">20</button>
+            <button class="chip" data-min="30">30</button>
+          </div>
+          <label class="compact" for="med-minutes" id="med-min-label">Custom minutes</label>
+          <input type="number" id="med-minutes" min="1" max="180" value="15" />
+
+          <div class="med-options">
+            <label class="toggle-line">
+              <input type="checkbox" id="med-settle" checked />
+              <span>Warm-up (30s of guided settling before the timer starts)</span>
+            </label>
+            <label class="toggle-line">
+              <input type="checkbox" id="med-interval" />
+              <span>Soft interval bell every 5 minutes</span>
+            </label>
+            <label class="toggle-line">
+              <input type="checkbox" id="med-last" checked />
+              <span>Gentle tick during the final 10 seconds</span>
+            </label>
+            <label class="toggle-line">
+              <input type="checkbox" id="med-ambient" />
+              <span>Ambient background sound during the sit</span>
+            </label>
+          </div>
+
+          <div class="timer-display med-timer" id="med-display">00:00</div>
+          <div class="med-status" id="med-status">Ready</div>
+          <div class="timer-controls med-controls">
+            <button class="btn primary" id="med-start">Start</button>
+            <button class="btn" id="med-pause" hidden>Pause</button>
+            <button class="btn" id="med-resume" hidden>Resume</button>
+            <button class="btn end-opt" id="med-end" hidden>End sit</button>
+            <button class="btn" id="med-reset">Reset</button>
+          </div>
+          <div class="med-extras">
+            <button class="btn" id="med-focus">Enter focus mode</button>
+          </div>
+          <div class="save-msg" id="med-msg" aria-live="polite"></div>
+        </div>
+
+        <div class="card">
+          <h3>Today's Sits</h3>
+          <p class="hint">Completed sittings appear here and count toward your stats.</p>
+          <div id="med-sessions" class="med-sessions">
+            <p class="muted">No sits logged yet today.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== FOCUS MODE OVERLAY ===== -->
+    <div class="focus-overlay hidden" id="med-focus-overlay">
+      <div class="focus-inner">
+        <div class="focus-top">
+          <span class="focus-type" id="focus-type">Meditation</span>
+          <span class="focus-ambient">
+            <label class="toggle-line"><input type="checkbox" id="focus-ambient" /><span>Ambient</span></label>
+          </span>
+        </div>
+        <div class="focus-display" id="focus-display">00:00</div>
+        <div class="focus-status" id="focus-status">Ready</div>
+        <div class="focus-controls">
+          <button class="btn focus-btn primary" id="focus-start">Start</button>
+          <button class="btn focus-btn" id="focus-pause" hidden>Pause</button>
+          <button class="btn focus-btn" id="focus-resume" hidden>Resume</button>
+          <button class="btn focus-btn end-opt" id="focus-end" hidden>End sit</button>
+          <button class="btn focus-btn" id="focus-reset">Reset</button>
+        </div>
+        <div class="focus-actions">
+          <button class="btn focus-exit" id="focus-exit">Exit focus mode</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== GUIDED SESSION ===== -->
+    <section id="tab-session" class="panel">
+      <div class="panel-head">
+        <h2>Guided Session</h2>
+        <p class="hint">Follow the full practice with the video. Use the timer to time your tremor phase (start simple: 5&ndash;15 min). Checklists help you track today's practice.</p>
+      </div>
+
+      <div class="session-grid">
+        <div class="card video-card">
+          <div class="video-wrap">
+            <iframe id="session-video" src="" title="Guided TRE session"
+              frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowfullscreen></iframe>
+          </div>
+          <p class="hint">Dr. David Berceli &mdash; TRE Follow-Along Session. Press play and release.</p>
+        </div>
+
+        <div class="card">
+          <h3>Timer</h3>
+          <p class="hint">Time your trembling phase. Stopping is always okay. Press <strong>End session</strong> to record what you did &mdash; <strong>Reset</strong> clears the timer without recording anything.</p>
+          <div class="timer-display" id="timer-display">00:00</div>
+          <div class="timer-controls">
+            <button class="btn" id="timer-start">Start</button>
+            <button class="btn end-opt" id="timer-end">End session</button>
+            <button class="btn" id="timer-reset">Reset</button>
+          </div>
+          <label class="compact" for="timer-min">Goal (minutes):
+            <input type="number" id="timer-min" min="1" max="60" value="10" />
+          </label>
+          <div class="save-msg" id="timer-msg" aria-live="polite"></div>
+        </div>
+
+        <div class="card">
+          <h3>Today's Practice</h3>
+          <p class="hint">Check the exercises you did, then save. This feeds your journal, streaks, and stats.</p>
+          <div id="today-checklist"></div>
+          <button class="btn primary" id="save-practice">Save Practice</button>
+          <div class="save-msg" id="save-msg" aria-live="polite"></div>
+        </div>
+
+        <div class="card stop-guide">
+          <h3>How to Stop the Tremors</h3>
+          <p class="hint">You are always in control. To soften or stop the shaking at any time:</p>
+          <ul>
+            <li>Straighten your legs out flat along the floor.</li>
+            <li>Sit up, or get up and walk around.</li>
+            <li>Press your feet firmly into the ground.</li>
+            <li>Breathe slowly and relaxed.</li>
+            <li>Drink water, or splash a little on your face.</li>
+          </ul>
+          <p class="hint"><strong>New to TRE?</strong> Keep shaking to a maximum of 15 minutes, 2&ndash;3 times a week.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== JOURNAL ===== -->
+    <section id="tab-journal" class="panel">
+      <div class="panel-head">
+        <h2>Daily Journal</h2>
+        <p class="hint">Keep separate records for your TRE practice and your meditation sittings.</p>
+        <div class="sub-tabs">
+          <button class="sub-tab active" data-sub="tre">&#126; TRE practice</button>
+          <button class="sub-tab" data-sub="med">&#127788; Meditation</button>
+        </div>
+      </div>
+
+      <!-- TRE JOURNAL -->
+      <div class="journal-sub" id="journal-sub-tre">
+        <div class="journal-layout">
+          <div class="card journal-entry-card">
+            <h3>TRE Entry for <span id="journal-date"></span></h3>
+
+            <label for="mood-select">Mood after practice:</label>
+            <select id="mood-select">
+              <option value="">&mdash; select &mdash;</option>
+              <option value="tired">Tired</option>
+              <option value="calm">Calm</option>
+              <option value="good">Good</option>
+              <option value="great">Great</option>
+              <option value="heavy">Heavy / release</option>
+              <option value="other">Other</option>
+            </select>
+
+            <label for="minutes-input">Total TRE minutes <span class="opt">(optional)</span>:</label>
+            <input type="number" id="minutes-input" min="0" max="180" placeholder="e.g. 15" />
+            <p class="hint">No timer today? That&rsquo;s okay &mdash; you can still record your mood and notes below. It will count toward your stats.</p>
+
+            <label for="notes-input">TRE notes:</label>
+            <textarea id="notes-input" rows="8"
+              placeholder="e.g. Legs trembled a lot in the wall sit. Felt calm afterward. Slept better tonight."></textarea>
+
+            <div class="journal-actions">
+              <button class="btn primary" id="save-journal">Save TRE Journal</button>
+              <div class="save-msg" id="journal-msg" aria-live="polite"></div>
+            </div>
+          </div>
+
+          <div class="card history-card">
+            <h3>TRE Past Entries</h3>
+            <div id="journal-history" class="history-list">
+              <p class="muted">No entries yet.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MEDITATION JOURNAL -->
+      <div class="journal-sub hidden" id="journal-sub-med">
+        <div class="journal-layout">
+          <div class="card journal-entry-card">
+            <h3>Meditation Entry for <span id="med-journal-date"></span></h3>
+
+            <label for="med-mood-select">Mood after sitting:</label>
+            <select id="med-mood-select">
+              <option value="">&mdash; select &mdash;</option>
+              <option value="focused">Focused</option>
+              <option value="calm">Calm</option>
+              <option value="restless">Restless</option>
+              <option value="drowsy">Drowsy</option>
+              <option value="clear">Clear</option>
+              <option value="other">Other</option>
+            </select>
+
+            <label for="med-minutes-input">Meditation minutes today:</label>
+            <input type="number" id="med-minutes-input" min="0" max="300" placeholder="e.g. 20" />
+
+            <label for="med-notes-input">Meditation notes:</label>
+            <textarea id="med-notes-input" rows="8"
+              placeholder="e.g. Mind wandered a lot during the breath focus. Noticed tension in the shoulders. A few clear moments."></textarea>
+
+            <div class="journal-actions">
+              <button class="btn primary" id="save-med-journal">Save Meditation Journal</button>
+              <div class="save-msg" id="med-journal-msg" aria-live="polite"></div>
+            </div>
+          </div>
+
+          <div class="card history-card">
+            <h3>Meditation Past Entries</h3>
+            <div id="med-journal-history" class="history-list">
+              <p class="muted">No entries yet.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== HISTORY ===== -->
+    <section id="tab-history" class="panel">
+      <div class="panel-head">
+        <h2>History</h2>
+        <p class="hint">Browse every journal entry &mdash; TRE and Meditation. Click an entry to view it in full, and use the &larr; Prev / Next &rarr; buttons to move through past days.</p>
+      </div>
+
+      <div class="journal-layout">
+        <div class="card history-card">
+          <h3>&#126; TRE Practice Entries</h3>
+          <div id="history-tre-list" class="history-list">
+            <p class="muted">No TRE entries yet.</p>
+          </div>
+        </div>
+        <div class="card history-card">
+          <h3>&#127788; Meditation Entries</h3>
+          <div id="history-med-list" class="history-list">
+            <p class="muted">No meditation entries yet.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== STATS ===== -->
+    <section id="tab-stats" class="panel">
+      <div class="panel-head">
+        <h2>Your Stats</h2>
+        <p class="hint">A gentle look at your consistency over time &mdash; split into TRE practice and meditation.</p>
+      </div>
+
+      <div class="stats-section">
+        <h3 class="stats-section-title tre-title">&#126; TRE practice</h3>
+        <div class="stats-grid">
+          <div class="card stat"><span class="stat-label">Total Sessions</span><span class="stat-num" id="stat-sessions">0</span></div>
+          <div class="card stat"><span class="stat-label">Current Streak</span><span class="stat-num" id="stat-streak">0</span><span class="stat-sub" id="stat-streak-sub">days</span></div>
+          <div class="card stat"><span class="stat-label">Longest Streak</span><span class="stat-num" id="stat-longest">0</span><span class="stat-sub">days</span></div>
+          <div class="card stat"><span class="stat-label">Total Minutes</span><span class="stat-num" id="stat-minutes">0</span></div>
+          <div class="card stat"><span class="stat-label">Exercises Tried</span><span class="stat-num" id="stat-excount">0</span></div>
+        </div>
+        <div class="card">
+          <h3>TRE Days in the Last Two Weeks</h3>
+          <div class="week" id="week-view"></div>
+        </div>
+      </div>
+
+      <div class="stats-section">
+        <h3 class="stats-section-title med-title">&#127788; Meditation</h3>
+        <div class="stats-grid">
+          <div class="card stat med-stat"><span class="stat-label">Meditation Min</span><span class="stat-num" id="stat-med-minutes">0</span></div>
+          <div class="card stat med-stat"><span class="stat-label">Meditation Rounds</span><span class="stat-num" id="stat-med-sessions">0</span></div>
+          <div class="card stat med-stat"><span class="stat-label">Meditation Streak</span><span class="stat-num" id="stat-med-streak">0</span><span class="stat-sub">days</span></div>
+        </div>
+        <div class="card">
+          <h3>Meditation Styles</h3>
+          <div id="med-breakdown" class="med-breakdown">
+            <p class="muted">No meditation logged yet.</p>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Meditation Days in the Last Two Weeks</h3>
+          <div class="week" id="med-week-view"></div>
+        </div>
+      </div>
+
+      <div class="stats-section backup-section">
+        <h3 class="stats-section-title tre-title">&#128190; Data &amp; backup</h3>
+        <div class="card">
+          <h3>Back up your practice</h3>
+          <p class="hint">Download all your TRE and meditation records as a single JSON file, or restore a backup you made earlier.</p>
+          <div class="backup-actions">
+            <button class="btn primary" id="backup-download">Download backup</button>
+            <label class="btn" for="backup-file">Import backup</label>
+            <input type="file" id="backup-file" accept=".json,application/json" hidden />
+          </div>
+          <div class="save-msg" id="backup-msg" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>TRE&reg; is a registered trademark of TRE for All, Inc. This app is for personal practice tracking and are not a substitute for professional guidance. You are always in control &mdash; go at your own pace.</p>
+  </footer>
+
+  <!-- ===== HISTORY DETAIL MODAL ===== -->
+  <div class="modal-overlay hidden" id="history-overlay">
+    <div class="modal history-modal" role="dialog" aria-modal="true" aria-labelledby="history-title">
+      <button class="modal-close" id="history-close" aria-label="Close" title="Close">&times;</button>
+      <div class="history-nav">
+        <button class="btn nav-btn" id="history-prev">&larr; Prev</button>
+        <h2 id="history-title" class="history-title"></h2>
+        <button class="btn nav-btn" id="history-next">Next &rarr;</button>
+      </div>
+      <div class="history-actions">
+        <button class="btn" id="history-edit">Edit this entry</button>
+      </div>
+      <div class="history-meta" id="history-meta"></div>
+      <div class="history-body" id="history-body"></div>
+    </div>
+  </div>
+
+  <script src="/static/exercises.js"></script>
+  <script src="/static/config.js"></script>
+  <script src="/static/api.js"></script>
+  <script src="/static/app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/static/sw.js").catch(function (err) {
+        console.error("SW registration failed:", err);
+      });
+    }
+  </script>
+</body>
+</html>

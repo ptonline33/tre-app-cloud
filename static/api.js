@@ -102,6 +102,7 @@ function sbHeaders(extra) {
       apikey: SB.anon,
       Authorization: "Bearer " + SB.anon,
       "Content-Type": "application/json",
+      "X-App-Key": SB.appKey || "", // required by Realtime security/RLS
     },
     extra || {}
   );

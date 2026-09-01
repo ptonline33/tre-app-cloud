@@ -49,48 +49,20 @@ policy shown as a comment in that file (details in step 4 below).
 
 ## 4. (Recommended) Make the journal private
 
-The anon key is public — it sits inside `config.js` and any visitor can read
-it. For a private journal:
+The anon key is public — it lives in static/config.js and any visitor can
+read it. To stop casual access the app already sends an `X-App-Key` header
+(`static/api.js`) whose value is read from `static/config.js` -> `appKey`.
+The matching Row Level Security policy is in `supabase-schema.sql`.
 
-1. Pick a long random string and put it in `static/api.js` headers:
+1. Pick (or keep) a long random string. Put the same value in two places:
+   - `static/config.js` -> `window.SUPABASE.appKey`
+   - `supabase-schema.sql` -> both `create policy "app key required" ...`
+     occurrences (and the `drop policy` is idempotent).
+2. In Supabase SQL Editor, run `supabase-schema.sql`. It drops any permissive
+   policy and applies the keyed one.
 
-   ```js
-   function sbHeaders(extra) {
-     return Object.assign(
-       {
-         apikey: SB.anon,
-         Authorization: "Bearer " + SB.anon,
-         "Content-Type": "application/json",
-         "X-App-Key": "YOUR-SECRET",
-       },
-       extra || {}
-     );
-   }
-   ```
-
-2. In Supabase SQL Editor, disable the permissive policy and enable the
-   key-checking one (both are commented in `supabase-schema.sql`):
-
-   ```sql
-   drop policy "allow anon access" on public.entries;
-
-   create policy "app key required" on public.entries
-     for all to anon
-     using (
-       coalesce(
-         nullif(current_setting('request.headers', true), '')::json->>'x-app-key',
-         ''
-       ) = 'YOUR-SECRET'
-     )
-     with check (
-       coalesce(
-         nullif(current_setting('request.headers', true), '')::json->>'x-app-key',
-         ''
-       ) = 'YOUR-SECRET'
-     );
-   ```
-
-   Replace `YOUR-SECRET` with the same value in both places and in `api.js`.
+This keeps out random visitors, but anyone who opens the app's source can
+still read the key, so it is not real security.
 
 ## 5. Deploy to Vercel
 

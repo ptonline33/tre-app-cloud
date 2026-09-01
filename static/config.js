@@ -6,7 +6,7 @@
 // secret. For a private journal you must protect the data with Row Level
 // Security policies (see supabase-schema.sql) rather than relying on this key.
 window.SUPABASE = {
-  url: "https://YOUR-PROJECT-REF.supabase.co",
-  anon: "YOUR-ANON-KEY",
+  url: "https://zwwpxslfpjyykpadxiuc.supabase.co",
+  anon: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3d3B4c2xmcGp5eWtwYWR4aXVjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyOTkxMDAsImV4cCI6MjEwMzg3NTEwMH0.fOROcr2qJ1WWOf2d_M9UosTqWqOxC9tgOaZuFrCYtU4",
   table: "entries",
 };

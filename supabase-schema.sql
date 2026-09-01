@@ -29,6 +29,7 @@ alter table public.entries enable row level security;
 -- make sure static/config.js "appKey" uses the same value.
 -- ---------------------------------------------------------------------------
 
+drop policy if exists "allow anon access" on public.entries;
 drop policy if exists "app key required" on public.entries;
 create policy "app key required" on public.entries
   for all to anon

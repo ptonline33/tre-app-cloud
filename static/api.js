@@ -140,26 +140,26 @@ async function api(path, options) {
 
   // GET /api/today
   if (p === API.today) {
-    const rows = await sbFetch("?select=*&date=eq." + sbToday() + "&limit=1", { method: "GET" });
+    const rows = await sbFetch("?select=*&date=eq." + sbToday() + "&limit=1", { method: "GET", headers: sbHeaders() });
     return cleanEntry(rows && rows[0]);
   }
 
   // GET /api/entry/:date
   const entryMatch = p.match(/^\/api\/entry\/(\d{4}-\d{2}-\d{2})$/);
   if (entryMatch) {
-    const rows = await sbFetch("?select=*&date=eq." + entryMatch[1] + "&limit=1", { method: "GET" });
+    const rows = await sbFetch("?select=*&date=eq." + entryMatch[1] + "&limit=1", { method: "GET", headers: sbHeaders() });
     return cleanEntry(rows && rows[0]);
   }
 
   // GET /api/entries
   if (p === API.entries) {
-    const rows = await sbFetch("?select=*&order=date.asc", { method: "GET" });
+    const rows = await sbFetch("?select=*&order=date.asc", { method: "GET", headers: sbHeaders() });
     return (rows || []).map(listEntry);
   }
 
   // GET /api/backup
   if (p === API.backup) {
-    const rows = await sbFetch("?select=*&order=date.asc", { method: "GET" });
+    const rows = await sbFetch("?select=*&order=date.asc", { method: "GET", headers: sbHeaders() });
     return {
       type: "omarchy-tre-practice",
       version: 1,

@@ -886,9 +886,10 @@ async function loadToday() {
   // Meditation journal fields
   $("#med-journal-date").textContent = formatDate(entry.date);
   $("#med-mood-select").value = entry.medMood || "";
-  const medTotal = entry.medMinutes != null && entry.medMinutes > 0
-    ? entry.medMinutes
-    : (entry.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
+  const sessionTotal = (entry.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
+  const medTotal = sessionTotal > 0
+    ? sessionTotal
+    : (entry.medMinutes != null && entry.medMinutes > 0 ? entry.medMinutes : 0);
   $("#med-minutes-input").value = medTotal || "";
   $("#med-notes-input").value = entry.medNotes || "";
 }
@@ -992,9 +993,10 @@ function renderHistoryList(container, entries, kind) {
       `;
     } else {
       const mood = e.medMood ? ` &middot; <span class="mood">${e.medMood}</span>` : "";
-      const medMin = e.medMinutes != null && e.medMinutes > 0
-        ? e.medMinutes
-        : (e.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
+      const medSessionTotal = (e.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
+      const medMin = medSessionTotal > 0
+        ? medSessionTotal
+        : (e.medMinutes != null && e.medMinutes > 0 ? e.medMinutes : 0);
       const mins = medMin ? ` &middot; <span class="mood">${medMin} min</span>` : "";
       const rounds = e.meditations ? e.meditations.length : 0;
       const roundInfo = rounds ? ` &middot; <span class="mood">${rounds} sit${rounds > 1 ? "s" : ""}</span>` : "";
@@ -1059,9 +1061,10 @@ function renderHistoryEntry() {
     meta = ` ${mood}${mins}${exercises}`;
   } else {
     const mood = e.medMood ? `<div class="hm-mood"><strong>Mood:</strong> ${escapeHtml(e.medMood)}</div>` : "";
-    const medMin = e.medMinutes != null && e.medMinutes > 0
-      ? e.medMinutes
-      : (e.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
+    const medSessionTotal = (e.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
+    const medMin = medSessionTotal > 0
+      ? medSessionTotal
+      : (e.medMinutes != null && e.medMinutes > 0 ? e.medMinutes : 0);
     const mins = medMin ? `<div class="hm-min"><strong>Minutes:</strong> ${medMin}</div>` : "";
     const rounds = (e.meditations || []).length
       ? `<div class="hm-rounds"><strong>Sits:</strong> ${e.meditations.length}</div>`
@@ -1145,9 +1148,10 @@ async function loadEntryIntoForm(dateStr, sub) {
   renderMedSessions(entry.meditations || []);
   $("#med-journal-date").textContent = formatDate(entry.date);
   $("#med-mood-select").value = entry.medMood || "";
-  const medTotal = entry.medMinutes != null && entry.medMinutes > 0
-    ? entry.medMinutes
-    : (entry.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
+  const sessionTotal = (entry.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
+  const medTotal = sessionTotal > 0
+    ? sessionTotal
+    : (entry.medMinutes != null && entry.medMinutes > 0 ? entry.medMinutes : 0);
   $("#med-minutes-input").value = medTotal || "";
   $("#med-notes-input").value = entry.medNotes || "";
   if (sub === "med") $("#med-notes-input").focus();
@@ -1197,11 +1201,14 @@ function computeStats(entries) {
   }
 
   // Meditation stats
-  // Per-day meditation minutes: the journal minutes field (medMinutes) is the
-  // authoritative total when set; otherwise fall back to the sum of logged sits.
+  // Per-day meditation minutes: always use the sum of timer-logged sessions
+  // as the primary source. Only fall back to the journal field (medMinutes)
+  // when no sessions were logged via the timer.
   const medMinForDay = (e) => {
+    const sessionTotal = (e.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
+    if (sessionTotal > 0) return sessionTotal;
     if (typeof e.medMinutes === "number" && e.medMinutes > 0) return e.medMinutes;
-    return (e.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
+    return 0;
   };
   // A day counts as a meditation day if it has logged sits OR a medMinutes total
   // (so journal-only entries still register in stats and the week view).

@@ -1214,7 +1214,7 @@ function computeStats(entries) {
   // each day has its own entry; today's sit(s) appear in today's record).
   const todaysEntry = entries.find((e) => e.date === todayStr());
   const medToday = todaysEntry ? medMinForDay(todaysEntry) : 0;
-  const medRounds = entries.filter(isMedDay).length;
+  const medRounds = todaysEntry ? (todaysEntry.meditations || []).length : 0;
   const byMedDay = {};
   entries.forEach((e) => {
     if (isMedDay(e)) byMedDay[e.date] = true;

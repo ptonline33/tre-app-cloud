@@ -996,7 +996,9 @@ function renderHistoryList(container, entries, kind) {
       const journalMin = e.medMinutes != null && e.medMinutes > 0 ? e.medMinutes : 0;
       const medMin = medSessionTotal + journalMin;
       const mins = medMin ? ` &middot; <span class="mood">${medMin} min</span>` : "";
-      const rounds = e.meditations ? e.meditations.length : 0;
+      const sessionRounds = e.meditations ? e.meditations.length : 0;
+      const journalRound = e.medMinutes != null && e.medMinutes > 0 ? 1 : 0;
+      const rounds = sessionRounds + journalRound;
       const roundInfo = rounds ? ` &middot; <span class="mood">${rounds} sit${rounds > 1 ? "s" : ""}</span>` : "";
       const preview = e.hasMedNotes ? e.medNotes : "";
       item.innerHTML = `
@@ -1063,8 +1065,11 @@ function renderHistoryEntry() {
     const journalMin = e.medMinutes != null && e.medMinutes > 0 ? e.medMinutes : 0;
     const medMin = medSessionTotal + journalMin;
     const mins = medMin ? `<div class="hm-min"><strong>Minutes:</strong> ${medMin}</div>` : "";
-    const rounds = (e.meditations || []).length
-      ? `<div class="hm-rounds"><strong>Sits:</strong> ${e.meditations.length}</div>`
+    const sessionRounds = (e.meditations || []).length;
+    const journalRound = e.medMinutes != null && e.medMinutes > 0 ? 1 : 0;
+    const totalRounds = sessionRounds + journalRound;
+    const rounds = totalRounds
+      ? `<div class="hm-rounds"><strong>Sits:</strong> ${totalRounds}</div>`
       : "";
     meta = `${mood}${mins}${rounds}`;
   }
@@ -1210,11 +1215,14 @@ function computeStats(entries) {
     (typeof e.medMinutes === "number" && e.medMinutes > 0);
 
   const medMinutes = entries.reduce((sum, e) => sum + medMinForDay(e), 0);
-  // Meditation minutes logged today (per-day records reset naturally because
-  // each day has its own entry; today's sit(s) appear in today's record).
+  // Meditation rounds for today: each timer session counts as a round, and a
+  // journal entry with minutes also counts as a round.
   const todaysEntry = entries.find((e) => e.date === todayStr());
   const medToday = todaysEntry ? medMinForDay(todaysEntry) : 0;
-  const medRounds = todaysEntry ? (todaysEntry.meditations || []).length : 0;
+  const sessionRounds = todaysEntry ? (todaysEntry.meditations || []).length : 0;
+  const journalRound = todaysEntry &&
+    typeof todaysEntry.medMinutes === "number" && todaysEntry.medMinutes > 0 ? 1 : 0;
+  const medRounds = sessionRounds + journalRound;
   const byMedDay = {};
   entries.forEach((e) => {
     if (isMedDay(e)) byMedDay[e.date] = true;

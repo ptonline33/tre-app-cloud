@@ -886,11 +886,10 @@ async function loadToday() {
   // Meditation journal fields
   $("#med-journal-date").textContent = formatDate(entry.date);
   $("#med-mood-select").value = entry.medMood || "";
-  const sessionTotal = (entry.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
-  const medTotal = sessionTotal > 0
-    ? sessionTotal
-    : (entry.medMinutes != null && entry.medMinutes > 0 ? entry.medMinutes : 0);
-  $("#med-minutes-input").value = medTotal || "";
+  // The journal minutes field records minutes entered by hand (separate from
+  // timer sessions, which are summed automatically into the stats).
+  const journalMin = entry.medMinutes != null && entry.medMinutes > 0 ? entry.medMinutes : 0;
+  $("#med-minutes-input").value = journalMin || "";
   $("#med-notes-input").value = entry.medNotes || "";
 }
 
@@ -994,9 +993,8 @@ function renderHistoryList(container, entries, kind) {
     } else {
       const mood = e.medMood ? ` &middot; <span class="mood">${e.medMood}</span>` : "";
       const medSessionTotal = (e.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
-      const medMin = medSessionTotal > 0
-        ? medSessionTotal
-        : (e.medMinutes != null && e.medMinutes > 0 ? e.medMinutes : 0);
+      const journalMin = e.medMinutes != null && e.medMinutes > 0 ? e.medMinutes : 0;
+      const medMin = medSessionTotal + journalMin;
       const mins = medMin ? ` &middot; <span class="mood">${medMin} min</span>` : "";
       const rounds = e.meditations ? e.meditations.length : 0;
       const roundInfo = rounds ? ` &middot; <span class="mood">${rounds} sit${rounds > 1 ? "s" : ""}</span>` : "";
@@ -1062,9 +1060,8 @@ function renderHistoryEntry() {
   } else {
     const mood = e.medMood ? `<div class="hm-mood"><strong>Mood:</strong> ${escapeHtml(e.medMood)}</div>` : "";
     const medSessionTotal = (e.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
-    const medMin = medSessionTotal > 0
-      ? medSessionTotal
-      : (e.medMinutes != null && e.medMinutes > 0 ? e.medMinutes : 0);
+    const journalMin = e.medMinutes != null && e.medMinutes > 0 ? e.medMinutes : 0;
+    const medMin = medSessionTotal + journalMin;
     const mins = medMin ? `<div class="hm-min"><strong>Minutes:</strong> ${medMin}</div>` : "";
     const rounds = (e.meditations || []).length
       ? `<div class="hm-rounds"><strong>Sits:</strong> ${e.meditations.length}</div>`
@@ -1148,11 +1145,8 @@ async function loadEntryIntoForm(dateStr, sub) {
   renderMedSessions(entry.meditations || []);
   $("#med-journal-date").textContent = formatDate(entry.date);
   $("#med-mood-select").value = entry.medMood || "";
-  const sessionTotal = (entry.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
-  const medTotal = sessionTotal > 0
-    ? sessionTotal
-    : (entry.medMinutes != null && entry.medMinutes > 0 ? entry.medMinutes : 0);
-  $("#med-minutes-input").value = medTotal || "";
+  const journalMin = entry.medMinutes != null && entry.medMinutes > 0 ? entry.medMinutes : 0;
+  $("#med-minutes-input").value = journalMin || "";
   $("#med-notes-input").value = entry.medNotes || "";
   if (sub === "med") $("#med-notes-input").focus();
   else $("#notes-input").focus();
@@ -1201,14 +1195,13 @@ function computeStats(entries) {
   }
 
   // Meditation stats
-  // Per-day meditation minutes: always use the sum of timer-logged sessions
-  // as the primary source. Only fall back to the journal field (medMinutes)
-  // when no sessions were logged via the timer.
+  // A day's meditation minutes = journal minutes (medMinutes) PLUS the sum of
+  // timer-logged sessions. The journal field records minutes entered by hand,
+  // and the timer sessions are logged separately, so they are combined.
   const medMinForDay = (e) => {
     const sessionTotal = (e.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
-    if (sessionTotal > 0) return sessionTotal;
-    if (typeof e.medMinutes === "number" && e.medMinutes > 0) return e.medMinutes;
-    return 0;
+    const journalMin = typeof e.medMinutes === "number" && e.medMinutes > 0 ? e.medMinutes : 0;
+    return sessionTotal + journalMin;
   };
   // A day counts as a meditation day if it has logged sits OR a medMinutes total
   // (so journal-only entries still register in stats and the week view).

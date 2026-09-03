@@ -217,7 +217,53 @@ $("#timer-start").addEventListener("click", () => {
       timerInterval = null;
       $("#timer-start").textContent = "Start";
     }
-    renderTimer();
+renderTimer();
+
+// ---------- Qi Gong timer ----------
+let qgInterval = null;
+let qgElapsed = 0;
+let qgGoal = 10;
+function renderQg() {
+  const s = qgElapsed % 60;
+  const m = Math.floor(qgElapsed / 60);
+  $("#qg-display").textContent =
+    String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+}
+$("#qg-min").addEventListener("input", (e) => {
+  qgGoal = Math.max(1, parseInt(e.target.value, 10) || 1);
+});
+$("#qg-start").addEventListener("click", () => {
+  if (qgInterval) {
+    clearInterval(qgInterval);
+    qgInterval = null;
+    $("#qg-start").textContent = "Start";
+    return;
+  }
+  if (qgElapsed >= qgGoal * 60) qgElapsed = 0;
+  $("#qg-start").textContent = "Pause";
+  qgInterval = setInterval(() => {
+    qgElapsed++;
+    if (qgElapsed >= qgGoal * 60) {
+      clearInterval(qgInterval);
+      qgInterval = null;
+      $("#qg-start").textContent = "Start";
+      const m = $("#qg-msg");
+      m.textContent = "Qi Gong complete \u2713";
+      setTimeout(() => (m.textContent = ""), 3500);
+    }
+    renderQg();
+  }, 1000);
+});
+$("#qg-reset").addEventListener("click", () => {
+  clearInterval(qgInterval);
+  qgInterval = null;
+  qgElapsed = 0;
+  $("#qg-start").textContent = "Start";
+  renderQg();
+  $("#qg-msg").textContent = "";
+});
+renderQg();
+
   }, 1000);
 });
 function timerMsg(text) {
@@ -1164,6 +1210,10 @@ function computeStats(entries) {
     (typeof e.medMinutes === "number" && e.medMinutes > 0);
 
   const medMinutes = entries.reduce((sum, e) => sum + medMinForDay(e), 0);
+  // Meditation minutes logged today (per-day records reset naturally because
+  // each day has its own entry; today's sit(s) appear in today's record).
+  const todaysEntry = entries.find((e) => e.date === todayStr());
+  const medToday = todaysEntry ? medMinForDay(todaysEntry) : 0;
   const medRounds = entries.filter(isMedDay).length;
   const byMedDay = {};
   entries.forEach((e) => {
@@ -1196,6 +1246,7 @@ function computeStats(entries) {
     medStreak,
     medByType,
     byMedDay,
+    medToday,
   };
 }
 
@@ -1222,6 +1273,7 @@ function refreshStats() {
     $("#stat-minutes").textContent = s.totalMinutes;
     $("#stat-excount").textContent = s.uniqueEx;
     $("#stat-med-minutes").textContent = s.medMinutes;
+    $("#stat-med-today").textContent = s.medToday;
     $("#stat-med-sessions").textContent = s.medRounds;
     $("#stat-med-streak").textContent = s.medStreak;
     renderMedBreakdown(s.medByType);

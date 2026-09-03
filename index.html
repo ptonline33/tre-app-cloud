@@ -25,6 +25,7 @@
       <button class="tab" data-tab="meditate">Meditate</button>
       <button class="tab" data-tab="session">Guided Session</button>
       <button class="tab" data-tab="journal">Journal</button>
+      <button class="tab" data-tab="qigong">Qi Gong</button>
       <button class="tab" data-tab="history">History</button>
       <button class="tab" data-tab="stats">Stats</button>
       <button class="tab install-btn" id="install-btn" hidden>Install App</button>
@@ -314,6 +315,53 @@
       </div>
     </section>
 
+    <!-- ===== QI GONG ===== -->
+    <section id="tab-qigong" class="panel">
+      <div class="panel-head">
+        <h2>Qi Gong</h2>
+        <p class="hint">Gentle movement, breath, and awareness practice that pairs beautifully with TRE &mdash; it calms the nervous system and supports natural tremor release.</p>
+      </div>
+
+      <div class="qg-grid">
+        <div class="card qg-guide-card">
+          <h3>What is Qi Gong?</h3>
+          <p>Qi Gong (&ldquo;life-energy practice&rdquo;) is an ancient Chinese discipline combining slow, flowing movement, coordinated breathing, and focused awareness. It is excellent before or after TRE to ground and settle the body.</p>
+          <ul>
+            <li><strong>Benefits:</strong> reduces stress, lowers blood pressure, improves balance &amp; flexibility, and supports deep relaxation.</li>
+            <li><strong>Best time:</strong> morning (to energize) or evening (to wind down). A few minutes is enough.</li>
+            <li><strong>Pairing with TRE:</strong> a short Qi Gong warm-up primes the body; a closing practice helps integrate after tremoring.</li>
+          </ul>
+          <p class="hint">Start with 5&ndash;10 minutes. Consistency matters more than duration.</p>
+        </div>
+
+        <div class="card">
+          <h3>Basic Routine &mdash; Five Movements</h3>
+          <p class="hint">Flow slowly through each, breathing naturally. Repeat the full set 2&ndash;3 times if you like.</p>
+          <ol class="qg-steps">
+            <li><strong>Warm-up:</strong> Shake out the hands and arms, loosen the shoulders, and take 3 slow deep breaths.</li>
+            <li><strong>Earth grounding:</strong> Stand with feet shoulder-width, knees soft. Sink your weight gently and sway slowly side to side, breathing low into the belly.</li>
+            <li><strong>Cloud hands:</strong> With knees slightly bent, sweep your arms in a slow horizontal figure-eight in front of you, letting your weight shift with the movement.</li>
+            <li><strong>Holding the ball:</strong> Cup your hands as if holding a large ball at belly height. Breathe in as you imagine drawing energy up, breathe out as you release it down through your feet.</li>
+            <li><strong>Closing:</strong> Bring your palms together in front of your chest, take 3 grounding breaths, then slowly press your palms down and let your arms rest by your sides.</li>
+          </ol>
+        </div>
+
+        <div class="card">
+          <h3>Timer</h3>
+          <p class="hint">Time your Qi Gong practice. Stopping is always fine &mdash; you are in control.</p>
+          <label class="compact" for="qg-min">Target minutes:
+            <input type="number" id="qg-min" min="1" max="60" value="10" />
+          </label>
+          <div class="timer-display" id="qg-display">00:00</div>
+          <div class="timer-controls">
+            <button class="btn primary" id="qg-start">Start</button>
+            <button class="btn" id="qg-reset">Reset</button>
+          </div>
+          <div class="save-msg" id="qg-msg" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- ===== HISTORY ===== -->
     <section id="tab-history" class="panel">
       <div class="panel-head">
@@ -362,7 +410,8 @@
       <div class="stats-section">
         <h3 class="stats-section-title med-title">&#127788; Meditation</h3>
         <div class="stats-grid">
-          <div class="card stat med-stat"><span class="stat-label">Meditation Min</span><span class="stat-num" id="stat-med-minutes">0</span></div>
+          <div class="card stat med-stat"><span class="stat-label">Total Meditation Min All Time</span><span class="stat-num" id="stat-med-minutes">0</span></div>
+          <div class="card stat med-stat"><span class="stat-label">Meditation Min for Today</span><span class="stat-num" id="stat-med-today">0</span></div>
           <div class="card stat med-stat"><span class="stat-label">Meditation Rounds</span><span class="stat-num" id="stat-med-sessions">0</span></div>
           <div class="card stat med-stat"><span class="stat-label">Meditation Streak</span><span class="stat-num" id="stat-med-streak">0</span><span class="stat-sub">days</span></div>
         </div>

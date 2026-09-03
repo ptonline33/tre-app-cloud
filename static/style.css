@@ -534,3 +534,15 @@ h-date .edit-ex { font-size: 11px; color: var(--accent); }
 .history-actions { margin-bottom: 10px; text-align: right; }
 .history-actions .btn { font-size: 13px; padding: 6px 14px; }
 
+/* Qi Gong */
+.qg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 760px) { .qg-grid { grid-template-columns: 1fr; } }
+.qg-grid .card { padding: 18px 20px; }
+.qg-guide-card { border-color: rgba(93,148,143,0.4); background: linear-gradient(160deg, #f2faf8, #e6f2ef); }
+.qg-guide-card h3 { color: var(--teal); margin-top: 0; }
+.qg-guide-card ul { padding-left: 20px; }
+.qg-guide-card li { margin-bottom: 7px; font-size: 14px; }
+.qg-steps { padding-left: 22px; }
+.qg-steps li { margin-bottom: 10px; font-size: 14.5px; }
+
+

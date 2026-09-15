@@ -15,8 +15,19 @@ create table if not exists public.entries (
   "exerciseNotes" jsonb   not null default '{}'::jsonb,
   "minutes"       integer,
   "medMinutes"    integer,
-  "meditations"   jsonb   not null default '[]'::jsonb
+  "meditations"   jsonb   not null default '[]'::jsonb,
+  "qigongs"       jsonb   not null default '[]'::jsonb,
+  "qgMood"        text,
+  "qgMinutes"     integer,
+  "qgNotes"       text    not null default ''
 );
+
+-- For projects already created from an older version of this schema, add the
+-- newer column(s) without touching existing rows.
+alter table public.entries add column if not exists "qigongs" jsonb not null default '[]'::jsonb;
+alter table public.entries add column if not exists "qgMood" text;
+alter table public.entries add column if not exists "qgMinutes" integer;
+alter table public.entries add column if not exists "qgNotes" text not null default '';
 
 alter table public.entries enable row level security;
 

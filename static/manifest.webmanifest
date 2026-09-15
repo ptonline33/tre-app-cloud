@@ -1,13 +1,13 @@
 {
-  "name": "TRE Practice",
-  "short_name": "TRE",
-  "description": "Tension & Trauma Releasing Exercises: guided practice, journal, and stats.",
+  "name": "Meditation Practice",
+  "short_name": "Meditation",
+  "description": "Guided TRE, meditation and Qi Gong with a journal and gentle stats.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f6f2ec",
-  "theme_color": "#5a87b0",
-  "orientation": "portrait-primary",
+  "background_color": "#0e091d",
+  "theme_color": "#be3f50",
+  "orientation": "any",
   "icons": [
     {
       "src": "/static/icon-192.png",

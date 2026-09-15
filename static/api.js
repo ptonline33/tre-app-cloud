@@ -36,6 +36,10 @@ function defaultEntry(date) {
     minutes: null,
     medMinutes: null,
     meditations: [],
+    qigongs: [],
+    qgMood: null,
+    qgMinutes: null,
+    qgNotes: "",
   };
 }
 
@@ -75,6 +79,18 @@ function cleanEntry(e) {
       out.meditations.push({ type, minutes: Math.round(mins), time: m.time || null });
     }
   }
+  if (Array.isArray(e.qigongs)) {
+    out.qigongs = [];
+    for (const q of e.qigongs) {
+      if (!q || typeof q !== "object") continue;
+      const mins = q.minutes;
+      if (typeof mins !== "number" || !Number.isFinite(mins) || !(mins > 0)) continue;
+      out.qigongs.push({ minutes: Math.round(mins), time: q.time || null });
+    }
+  }
+  if (e.qgMood !== undefined && e.qgMood !== null) out.qgMood = e.qgMood;
+  if (typeof e.qgNotes === "string") out.qgNotes = e.qgNotes.trim();
+  if (typeof e.qgMinutes === "number" && Number.isFinite(e.qgMinutes)) out.qgMinutes = Math.max(0, Math.round(e.qgMinutes));
   return out;
 }
 
@@ -87,12 +103,17 @@ function listEntry(e) {
     minutes: e.minutes,
     medMinutes: e.medMinutes,
     meditations: e.meditations || [],
+    qigongs: e.qigongs || [],
     hasNotes: !!(e.notes || "").trim(),
     notes: e.notes || "",
     medMood: e.medMood,
     hasMedNotes: !!(e.medNotes || "").trim(),
     medNotes: e.medNotes || "",
     exerciseNotes: e.exerciseNotes || {},
+    qgMood: e.qgMood,
+    qgMinutes: e.qgMinutes,
+    hasQgNotes: !!(e.qgNotes || "").trim(),
+    qgNotes: e.qgNotes || "",
   };
 }
 

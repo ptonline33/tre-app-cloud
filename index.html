@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TRE Practice App</title>
-  <meta name="description" content="Tension & Trauma Releasing Exercises: guided practice, journal, and stats." />
-  <meta name="theme-color" content="#5a87b0" />
+  <title>Meditation Practice</title>
+  <meta name="description" content="Meditation Practice: guided TRE, meditation and Qi Gong with a journal and gentle stats." />
+  <meta name="theme-color" content="#0e091d" />
   <link rel="manifest" href="/static/manifest.webmanifest" />
   <link rel="icon" href="/static/icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="/static/icon-192.png" />
@@ -14,18 +14,18 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo" aria-hidden="true">&#126;</span>
+      <span class="logo" aria-hidden="true">&#2384;</span>
       <div>
-        <h1>TRE Practice</h1>
-        <p class="tagline">Tension &amp; Trauma Releasing Exercises</p>
+        <h1>Meditation Practice</h1>
+        <p class="tagline">TRE &middot; Meditation &middot; Qi Gong</p>
       </div>
     </div>
     <nav class="tabs" id="tabs">
-      <button class="tab" data-tab="exercises">Exercises</button>
+      <button class="tab active" data-tab="dashboard">Dashboard</button>
       <button class="tab" data-tab="meditate">Meditate</button>
-      <button class="tab" data-tab="session">Guided Session</button>
-      <button class="tab" data-tab="journal">Journal</button>
       <button class="tab" data-tab="qigong">Qi Gong</button>
+      <button class="tab" data-tab="exercises">TRE</button>
+      <button class="tab" data-tab="journal">Journal</button>
       <button class="tab" data-tab="history">History</button>
       <button class="tab" data-tab="stats">Stats</button>
       <button class="tab install-btn" id="install-btn" hidden>Install App</button>
@@ -33,44 +33,133 @@
   </header>
 
   <main>
-    <!-- ===== EXERCISES ===== -->
-    <section id="tab-exercises" class="panel active">
+    <!-- ===== DASHBOARD ===== -->
+    <section id="tab-dashboard" class="panel active">
+      <div class="panel-head dash-head">
+        <h2 id="dash-greeting">Welcome</h2>
+        <p class="hint" id="dash-sub"></p>
+      </div>
+
+      <div class="session-grid">
+        <div class="card">
+          <h3>Today's practice</h3>
+          <div id="dash-today" class="dash-today">
+            <p class="muted">Loading&hellip;</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Begin</h3>
+          <p class="hint">Pick a practice to start. When you're done, log it in the <a href="#" data-go-tab="journal">Journal</a> &mdash; that's what feeds your stats.</p>
+          <div class="quick-links">
+            <a class="ql" href="#" data-go-tab="exercises"><span class="ql-icon ql-tre">&#126;</span><span class="ql-name">TRE</span><span class="ql-desc">Release tension</span></a>
+            <a class="ql" href="#" data-go-tab="meditate"><span class="ql-icon ql-med">&#127788;</span><span class="ql-name">Meditate</span><span class="ql-desc">Sit in stillness</span></a>
+            <a class="ql" href="#" data-go-tab="qigong"><span class="ql-icon ql-qg">&#9775;</span><span class="ql-name">Qi Gong</span><span class="ql-desc">Flow with breath</span></a>
+            <a class="ql" href="#" data-go-tab="journal"><span class="ql-icon ql-journal">&#128203;</span><span class="ql-name">Journal</span><span class="ql-desc">Reflect &amp; record</span></a>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-section">
+        <h3 class="stats-section-title tre-title">&#9889; Your progress</h3>
+        <div class="stats-grid" id="dash-stats"></div>
+      </div>
+
+      <div class="card">
+        <h3>Last 14 Days</h3>
+        <p class="hint">Dots show which practice happened on each day &mdash;
+          <span class="dash-key"><span class="dk dk-tre"></span>TRE</span>
+          <span class="dash-key"><span class="dk dk-med"></span>Meditation</span>
+          <span class="dash-key"><span class="dk dk-qg"></span>Qi Gong</span>.
+          Click a day to open its journal entry.</p>
+        <div class="week dash-week" id="dash-week"></div>
+      </div>
+
+      <div class="card">
+        <h3>Recent Journal Entries</h3>
+        <div class="history-list" id="dash-recent">
+          <p class="muted">Nothing logged yet. Start with a practice &mdash; then write a journal entry.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== TRE ===== -->
+    <section id="tab-exercises" class="panel">
       <div class="panel-head">
-        <h2>All 7 Exercises</h2>
-        <p class="hint">Tap an exercise to see the steps and a guided video. Always self-regulated &mdash; you are in control and can stop anytime.</p>
+        <h2>TRE Practice</h2>
+        <p class="hint">Tension &amp; Trauma Releasing Exercises &mdash; follow along with the guided session, time your tremor phase, and check what you did. Always self-regulated &mdash; you are in control.</p>
       </div>
 
-      <div class="quick-card" id="quick-card">
-        <h3>Quick Essentials &mdash; low on time?</h3>
-        <p class="hint">The 2 most important exercises to trigger the tremor quickly:</p>
-        <div class="quick-items">
-          <div class="quick-item"><span class="ex-num">6</span> Wall Sit</div>
-          <span class="quick-arrow">&rarr;</span>
-          <div class="quick-item"><span class="ex-num">8</span> Starting the Tremor</div>
+      <div class="session-grid">
+        <div class="card video-card">
+          <div class="video-wrap">
+            <iframe id="session-video" src="" title="Guided TRE session"
+              frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowfullscreen></iframe>
+          </div>
+          <p class="hint">Dr. David Berceli &mdash; TRE Follow-Along Session. Press play and release.</p>
         </div>
-        <button class="btn primary" id="quick-open">View Quick Routine</button>
+
+        <div class="card">
+          <h3>Timer</h3>
+          <p class="hint">Time your trembling phase &mdash; stopping is always okay. Timers keep time only: log your practice in the <strong>Journal</strong> and it will count toward your stats.</p>
+          <div class="timer-display" id="timer-display">00:00</div>
+          <div class="timer-controls">
+            <button class="btn" id="timer-start">Start</button>
+            <button class="btn end-opt" id="timer-end">End session</button>
+            <button class="btn" id="timer-reset">Reset</button>
+          </div>
+          <label class="compact" for="timer-min">Goal (minutes):
+            <input type="number" id="timer-min" min="1" max="60" value="10" />
+          </label>
+          <div class="save-msg" id="timer-msg" aria-live="polite"></div>
+        </div>
       </div>
 
+      <div class="session-grid lower">
+        <div class="card stop-guide">
+          <h3>How to Stop the Tremors</h3>
+          <p class="hint">You are always in control. To soften or stop the shaking at any time:</p>
+          <ul>
+            <li>Straighten your legs out flat along the floor.</li>
+            <li>Sit up, or get up and walk around.</li>
+            <li>Press your feet firmly into the ground.</li>
+            <li>Breathe slowly and relaxed.</li>
+            <li>Drink water, or splash a little on your face.</li>
+          </ul>
+          <p class="hint"><strong>New to TRE?</strong> Keep shaking to a maximum of 15 minutes, 2&ndash;3 times a week.</p>
+        </div>
+
+        <div class="card quick-card">
+          <h3>Quick Essentials &mdash; short on time?</h3>
+          <p class="hint">The two most impactful steps: <strong>Wall Sit</strong>, then <strong>Starting the Tremor</strong>. About 5&ndash;8 minutes.</p>
+          <div class="video-wrap">
+            <iframe src="https://www.youtube-nocookie.com/embed/Hn167HCE6nk?rel=0"
+              title="Quick TRE routine video" frameborder="0" loading="lazy"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowfullscreen></iframe>
+          </div>
+          <p class="hint">Follow the quick routine &mdash; then log your session in the <a href="#" data-go-tab="journal">Journal</a>.</p>
+        </div>
+      </div>
+
+      <div class="video-list-head">
+        <h3>Guided Exercise Videos</h3>
+        <p class="hint">Each step of the release on video &mdash; pick one and follow along.</p>
+      </div>
       <div class="exercise-list" id="exercise-list"></div>
-
-      <div class="modal-overlay hidden" id="modal-overlay">
-        <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-          <button class="modal-close" id="modal-close" aria-label="Close" title="Close">&times;</button>
-          <div class="modal-body" id="modal-body"></div>
-        </div>
-      </div>
     </section>
 
     <!-- ===== MEDITATE ===== -->
     <section id="tab-meditate" class="panel">
       <div class="panel-head">
         <h2>Meditation Timer</h2>
-        <p class="hint">Choose a style and a duration. A bell rings to begin and to end your sit. Completed sessions are logged to your stats automatically.</p>
+        <p class="hint">Choose a style and a duration. A bell rings to begin and to end your sit. Timers keep time only &mdash; log your sit in the <strong>Journal</strong> and it will count toward your stats.</p>
       </div>
 
       <div class="med-grid">
         <div class="card med-main">
-          <h3>Set Up Your Sit</h3>
+        <h3>Set Up Your Sit</h3>
 
           <label for="med-type">Type of meditation</label>
           <select id="med-type">
@@ -136,11 +225,15 @@
         </div>
 
         <div class="card">
-          <h3>Today's Sits</h3>
-          <p class="hint">Completed sittings appear here and count toward your stats.</p>
-          <div id="med-sessions" class="med-sessions">
-            <p class="muted">No sits logged yet today.</p>
+          <h3>Guided Sessions</h3>
+          <p class="hint">Follow along when you'd like a little direction &mdash; a guided sit can help settle an active mind.</p>
+          <div class="video-wrap">
+            <iframe src="https://www.youtube-nocookie.com/embed/9lvNhOKtifU?rel=0"
+              title="Guided meditation video" frameborder="0" loading="lazy"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowfullscreen></iframe>
           </div>
+          <p class="hint"><a href="https://youtu.be/9lvNhOKtifU" target="_blank" rel="noopener">Watch this guided session on YouTube</a></p>
         </div>
       </div>
     </section>
@@ -169,69 +262,15 @@
       </div>
     </div>
 
-    <!-- ===== GUIDED SESSION ===== -->
-    <section id="tab-session" class="panel">
-      <div class="panel-head">
-        <h2>Guided Session</h2>
-        <p class="hint">Follow the full practice with the video. Use the timer to time your tremor phase (start simple: 5&ndash;15 min). Checklists help you track today's practice.</p>
-      </div>
-
-      <div class="session-grid">
-        <div class="card video-card">
-          <div class="video-wrap">
-            <iframe id="session-video" src="" title="Guided TRE session"
-              frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowfullscreen></iframe>
-          </div>
-          <p class="hint">Dr. David Berceli &mdash; TRE Follow-Along Session. Press play and release.</p>
-        </div>
-
-        <div class="card">
-          <h3>Timer</h3>
-          <p class="hint">Time your trembling phase. Stopping is always okay. Press <strong>End session</strong> to record what you did &mdash; <strong>Reset</strong> clears the timer without recording anything.</p>
-          <div class="timer-display" id="timer-display">00:00</div>
-          <div class="timer-controls">
-            <button class="btn" id="timer-start">Start</button>
-            <button class="btn end-opt" id="timer-end">End session</button>
-            <button class="btn" id="timer-reset">Reset</button>
-          </div>
-          <label class="compact" for="timer-min">Goal (minutes):
-            <input type="number" id="timer-min" min="1" max="60" value="10" />
-          </label>
-          <div class="save-msg" id="timer-msg" aria-live="polite"></div>
-        </div>
-
-        <div class="card">
-          <h3>Today's Practice</h3>
-          <p class="hint">Check the exercises you did, then save. This feeds your journal, streaks, and stats.</p>
-          <div id="today-checklist"></div>
-          <button class="btn primary" id="save-practice">Save Practice</button>
-          <div class="save-msg" id="save-msg" aria-live="polite"></div>
-        </div>
-
-        <div class="card stop-guide">
-          <h3>How to Stop the Tremors</h3>
-          <p class="hint">You are always in control. To soften or stop the shaking at any time:</p>
-          <ul>
-            <li>Straighten your legs out flat along the floor.</li>
-            <li>Sit up, or get up and walk around.</li>
-            <li>Press your feet firmly into the ground.</li>
-            <li>Breathe slowly and relaxed.</li>
-            <li>Drink water, or splash a little on your face.</li>
-          </ul>
-          <p class="hint"><strong>New to TRE?</strong> Keep shaking to a maximum of 15 minutes, 2&ndash;3 times a week.</p>
-        </div>
-      </div>
-    </section>
-
     <!-- ===== JOURNAL ===== -->
     <section id="tab-journal" class="panel">
       <div class="panel-head">
         <h2>Daily Journal</h2>
-        <p class="hint">Keep separate records for your TRE practice and your meditation sittings.</p>
+        <p class="hint">Keep separate records for your TRE practice, your meditation sittings, and your Qi Gong.</p>
         <div class="sub-tabs">
           <button class="sub-tab active" data-sub="tre">&#126; TRE practice</button>
-          <button class="sub-tab" data-sub="med">&#127788; Meditation</button>
+          <button class="sub-tab med-tab" data-sub="med">&#127788; Meditation</button>
+          <button class="sub-tab qg-tab" data-sub="qg">&#9775; Qi Gong</button>
         </div>
       </div>
 
@@ -256,7 +295,10 @@
             <input type="number" id="minutes-input" min="0" max="180" placeholder="e.g. 15" />
             <p class="hint">No timer today? That&rsquo;s okay &mdash; you can still record your mood and notes below. It will count toward your stats.</p>
 
-            <label for="notes-input">TRE notes:</label>
+            <div class="notes-head">
+              <label for="notes-input">TRE notes</label>
+              <button type="button" class="btn pop-notes" data-pop-notes="notes-input" data-notes-label="TRE journal">Pop out</button>
+            </div>
             <textarea id="notes-input" rows="8"
               placeholder="e.g. Legs trembled a lot in the wall sit. Felt calm afterward. Slept better tonight."></textarea>
 
@@ -295,7 +337,10 @@
             <label for="med-minutes-input">Meditation minutes today:</label>
             <input type="number" id="med-minutes-input" min="0" max="300" placeholder="e.g. 20" />
 
-            <label for="med-notes-input">Meditation notes:</label>
+            <div class="notes-head">
+              <label for="med-notes-input">Meditation notes</label>
+              <button type="button" class="btn pop-notes" data-pop-notes="med-notes-input" data-notes-label="Meditation journal">Pop out</button>
+            </div>
             <textarea id="med-notes-input" rows="8"
               placeholder="e.g. Mind wandered a lot during the breath focus. Noticed tension in the shoulders. A few clear moments."></textarea>
 
@@ -308,6 +353,48 @@
           <div class="card history-card">
             <h3>Meditation Past Entries</h3>
             <div id="med-journal-history" class="history-list">
+              <p class="muted">No entries yet.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- QI GONG JOURNAL -->
+      <div class="journal-sub hidden" id="journal-sub-qg">
+        <div class="journal-layout">
+          <div class="card journal-entry-card">
+            <h3>Qi Gong Entry for <span id="qg-journal-date"></span></h3>
+
+            <label for="qg-mood-select">Mood after practice:</label>
+            <select id="qg-mood-select">
+              <option value="">&mdash; select &mdash;</option>
+              <option value="calm">Calm</option>
+              <option value="energized">Energized</option>
+              <option value="relaxed">Relaxed</option>
+              <option value="focused">Focused</option>
+              <option value="released">Released</option>
+              <option value="other">Other</option>
+            </select>
+
+            <label for="qg-minutes-input">Qi Gong minutes today:</label>
+            <input type="number" id="qg-minutes-input" min="0" max="300" placeholder="e.g. 10" />
+
+            <div class="notes-head">
+              <label for="qg-notes-input">Qi Gong notes</label>
+              <button type="button" class="btn pop-notes" data-pop-notes="qg-notes-input" data-notes-label="Qi Gong journal">Pop out</button>
+            </div>
+            <textarea id="qg-notes-input" rows="8"
+              placeholder="e.g. Slow, smooth movements, long relaxed breaths. Noticed my shoulders drop and my mind get quiet."></textarea>
+
+            <div class="journal-actions">
+              <button class="btn primary" id="save-qg-journal">Save Qi Gong Journal</button>
+              <div class="save-msg" id="qg-journal-msg" aria-live="polite"></div>
+            </div>
+          </div>
+
+          <div class="card history-card">
+            <h3>Qi Gong Past Entries</h3>
+            <div id="qg-journal-history" class="history-list">
               <p class="muted">No entries yet.</p>
             </div>
           </div>
@@ -358,13 +445,14 @@
 
         <div class="card">
           <h3>Timer</h3>
-          <p class="hint">Time your Qi Gong practice. Stopping is always fine &mdash; you are in control.</p>
+          <p class="hint">Time your Qi Gong practice &mdash; stopping is always fine, you are in control. Timers keep time only &mdash; log your practice in the <strong>Journal</strong> and it will count toward your stats.</p>
           <label class="compact" for="qg-min">Target minutes:
             <input type="number" id="qg-min" min="1" max="60" value="10" />
           </label>
           <div class="timer-display" id="qg-display">00:00</div>
           <div class="timer-controls">
             <button class="btn primary" id="qg-start">Start</button>
+            <button class="btn end-opt" id="qg-end" hidden>End practice</button>
             <button class="btn" id="qg-reset">Reset</button>
           </div>
           <div class="save-msg" id="qg-msg" aria-live="polite"></div>
@@ -376,7 +464,7 @@
     <section id="tab-history" class="panel">
       <div class="panel-head">
         <h2>History</h2>
-        <p class="hint">Browse every journal entry &mdash; TRE and Meditation. Click an entry to view it in full, and use the &larr; Prev / Next &rarr; buttons to move through past days.</p>
+        <p class="hint">Browse every journal entry &mdash; TRE, Meditation, and Qi Gong. Click an entry to view it in full, and use the &larr; Prev / Next &rarr; buttons to move through past days.</p>
       </div>
 
       <div class="journal-layout">
@@ -392,6 +480,12 @@
             <p class="muted">No meditation entries yet.</p>
           </div>
         </div>
+        <div class="card history-card">
+          <h3>&#9775; Qi Gong Entries</h3>
+          <div id="history-qg-list" class="history-list">
+            <p class="muted">No Qi Gong entries yet.</p>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -399,7 +493,7 @@
     <section id="tab-stats" class="panel">
       <div class="panel-head">
         <h2>Your Stats</h2>
-        <p class="hint">A gentle look at your consistency over time &mdash; split into TRE practice and meditation.</p>
+        <p class="hint">A gentle look at your consistency &mdash; split into TRE practice, meditation, and Qi Gong. Stats are counted only from your <strong>journal entries</strong>, so write one for every session.</p>
       </div>
 
       <div class="stats-section">
@@ -409,7 +503,6 @@
           <div class="card stat"><span class="stat-label">Current Streak</span><span class="stat-num" id="stat-streak">0</span><span class="stat-sub" id="stat-streak-sub">days</span></div>
           <div class="card stat"><span class="stat-label">Longest Streak</span><span class="stat-num" id="stat-longest">0</span><span class="stat-sub">days</span></div>
           <div class="card stat"><span class="stat-label">Total Minutes</span><span class="stat-num" id="stat-minutes">0</span></div>
-          <div class="card stat"><span class="stat-label">Exercises Tried</span><span class="stat-num" id="stat-excount">0</span></div>
         </div>
         <div class="card">
           <h3>TRE Days in the Last Two Weeks</h3>
@@ -426,14 +519,22 @@
           <div class="card stat med-stat"><span class="stat-label">Meditation Streak</span><span class="stat-num" id="stat-med-streak">0</span><span class="stat-sub">days</span></div>
         </div>
         <div class="card">
-          <h3>Meditation Styles</h3>
-          <div id="med-breakdown" class="med-breakdown">
-            <p class="muted">No meditation logged yet.</p>
-          </div>
-        </div>
-        <div class="card">
           <h3>Meditation Days in the Last Two Weeks</h3>
           <div class="week" id="med-week-view"></div>
+        </div>
+      </div>
+
+      <div class="stats-section">
+        <h3 class="stats-section-title qg-title">&#9775; Qi Gong</h3>
+        <div class="stats-grid">
+          <div class="card stat qg-stat"><span class="stat-label">Total Qi Gong Min All Time</span><span class="stat-num" id="stat-qg-minutes">0</span></div>
+          <div class="card stat qg-stat"><span class="stat-label">Qi Gong Min for Today</span><span class="stat-num" id="stat-qg-today">0</span></div>
+          <div class="card stat qg-stat"><span class="stat-label">Qi Gong Rounds for Today</span><span class="stat-num" id="stat-qg-sessions">0</span></div>
+          <div class="card stat qg-stat"><span class="stat-label">Qi Gong Streak</span><span class="stat-num" id="stat-qg-streak">0</span><span class="stat-sub">days</span></div>
+        </div>
+        <div class="card">
+          <h3>Qi Gong Days in the Last Two Weeks</h3>
+          <div class="week" id="qg-week-view"></div>
         </div>
       </div>
 
@@ -471,6 +572,22 @@
       </div>
       <div class="history-meta" id="history-meta"></div>
       <div class="history-body" id="history-body"></div>
+    </div>
+  </div>
+
+  <!-- ===== POP-OUT NOTES EDITOR ===== -->
+  <div class="modal-overlay hidden" id="notes-overlay">
+    <div class="modal notes-modal" role="dialog" aria-modal="true" aria-labelledby="notes-modal-title">
+      <button class="modal-close" id="notes-close" aria-label="Close" title="Close">&times;</button>
+      <h2 id="notes-modal-title" class="notes-modal-title">Journal</h2>
+      <label for="notes-modal-input">Write freely &mdash; no need to edit as you go:</label>
+      <textarea id="notes-modal-input" class="notes-modal-input" rows="14"
+        placeholder="Your thoughts, feelings, sensations &hellip;"></textarea>
+      <p class="hint">Saving writes your entries back into the journal form below &mdash; press <strong>Save journal</strong> there when you're ready to keep it.</p>
+      <div class="notes-modal-actions">
+        <button class="btn" id="notes-cancel">Cancel</button>
+        <button class="btn primary" id="notes-save">Save &amp; Close</button>
+      </div>
     </div>
   </div>
 

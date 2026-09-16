@@ -83,17 +83,27 @@ h1, h2, h3, .stat-num, .timer-display, .brand, .tagline {
   box-shadow: 0 4px 12px rgba(190, 63, 80, 0.45);
 }
 
-.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
 .tab {
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
-  padding: 9px 17px;
+  padding: 9px 15px;
   border-radius: 999px;
   cursor: pointer;
   font-size: 14px;
   font-weight: 600;
   transition: all 0.18s;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .tab:hover { background: var(--soft); color: var(--ink); }
 .tab.active { background: var(--grad); color: #fff; box-shadow: 0 4px 14px rgba(190, 63, 80, 0.40); }
@@ -636,5 +646,78 @@ h-date .edit-ex { font-size: 11px; color: var(--accent); }
 .qg-guide-card li { margin-bottom: 7px; font-size: 14px; }
 .qg-steps { padding-left: 22px; }
 .qg-steps li { margin-bottom: 10px; font-size: 14.5px; }
+
+/* ===== Mobile / PWA ===== */
+@media (max-width: 760px) {
+  body { padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
+
+  .topbar {
+    gap: 8px;
+    padding: 12px 14px;
+    background: rgba(14, 9, 29, 0.94);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .brand h1 { font-size: 18px; }
+  .brand .tagline { display: none; }
+  .logo { width: 38px; height: 38px; font-size: 22px; border-radius: 11px; }
+
+  .tabs {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    margin: 0;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+    background: rgba(24, 17, 40, 0.94);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-top: 1px solid var(--line);
+    overscroll-behavior-x: contain;
+  }
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 8px 15px;
+    font-size: 13.5px;
+  }
+  .tab.active { box-shadow: 0 3px 10px rgba(190, 63, 80, 0.35); }
+
+  main { padding: 18px 14px; }
+  .panel-head h2 { font-size: 21px; }
+
+  .card { padding: 16px; }
+  .card h3 { font-size: 16px; }
+
+  .btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 9px 14px;
+  }
+  .timer-controls { flex-wrap: wrap; }
+  .timer-controls .btn { flex: 1 1 40%; }
+  .med-extras { flex-wrap: wrap; }
+
+  .timer-display { font-size: 40px; }
+  .med-timer { font-size: 52px; margin: 12px 0 2px; }
+
+  .modal { padding: 18px; max-height: 86vh; }
+  .modal-overlay { padding: 12px; align-items: flex-end; }
+  .history-nav { flex-wrap: wrap; }
+  .history-nav .history-title { flex: 1 1 100%; order: -1; }
+  .stats-grid { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+  .stat { padding: 18px 10px; }
+  .stat-num { font-size: 30px; }
+
+  .quick-links { gap: 8px; }
+  .ql { padding: 11px; }
+
+  .footer { padding: 18px 16px calc(20px + env(safe-area-inset-bottom, 0px)); }
+}
 
 

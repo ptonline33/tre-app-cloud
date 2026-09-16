@@ -19,12 +19,18 @@ function formatDate(dateStr) {
 }
 
 // ---------- Tabs ----------
+function activateTab(name) {
+  $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+  $$(".panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
+  // Reset scroll so the app never "lands" mid-page when switching sections.
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+  window.scrollTo(0, 0);
+}
 $$(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
-    $$(".tab").forEach((t) => t.classList.remove("active"));
-    tab.classList.add("active");
-    $$(".panel").forEach((p) => p.classList.remove("active"));
-    $("#tab-" + tab.dataset.tab).classList.add("active");
+    activateTab(tab.dataset.tab);
+    tab.blur();
   });
 });
 
@@ -679,9 +685,7 @@ document.addEventListener("click", (e) => {
   const link = e.target.closest("[data-go-tab]");
   if (!link) return;
   e.preventDefault();
-  const target = link.dataset.goTab;
-  $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === target));
-  $$(".panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + target));
+  activateTab(link.dataset.goTab);
 });
 
 // ---------- Pop-out notes editor ----------
@@ -1067,8 +1071,7 @@ async function loadEntryIntoForm(dateStr, sub) {
   await loadToday();
   const entry = await api(API.entryFor(dateStr));
   // switch to journal tab
-  $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === "journal"));
-  $$(".panel").forEach((p) => p.classList.toggle("active", p.id === "tab-journal"));
+  activateTab("journal");
   // switch sub-tab
   $$(".sub-tab").forEach((t) => t.classList.toggle("active", t.dataset.sub === sub));
   $("#journal-sub-tre").classList.toggle("hidden", sub !== "tre");

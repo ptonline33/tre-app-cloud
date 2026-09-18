@@ -48,9 +48,9 @@ function buildExerciseCards() {
     card.innerHTML = `
       <h3 class="ex-card-name">${ex.name}</h3>
       <div class="video-wrap">
-        <iframe src="https://www.youtube-nocookie.com/embed/${videoId}?rel=0"
+        <iframe src="https://www.youtube-nocookie.com/embed/${videoId}?rel=0&playsinline=1"
           title="Guided ${escapeHtml(ex.name)} video" frameborder="0" loading="lazy"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
           allowfullscreen></iframe>
       </div>
     `;
@@ -65,7 +65,32 @@ function youtubeId(url) {
 
 // ---------- Guided session ----------
 $("#session-video").src =
-  "https://www.youtube-nocookie.com/embed/" + youtubeId(window.TRE_GUIDED_VIDEO) + "?rel=0";
+  "https://www.youtube-nocookie.com/embed/" + youtubeId(window.TRE_GUIDED_VIDEO) + "?rel=0&playsinline=1";
+
+// ---------- Fullscreen / landscape (PWA) ----------
+// When a video goes fullscreen, auto-rotate the app to landscape so
+// YouTube embeds play widescreen in standalone mode. Locks are best-effort:
+// browsers without screen.orientation.lock (e.g. iOS) are left untouched.
+const onFullscreenChange = () => {
+  const fullscreenElement =
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.mozFullScreenElement ||
+    document.msFullscreenElement ||
+    null;
+  const orientation = screen.orientation;
+  try {
+    if (fullscreenElement) {
+      orientation.lock && orientation.lock("landscape").catch(() => {});
+    } else if (orientation.unlock) {
+      orientation.unlock();
+    }
+  } catch {
+    /* Orientation lock unavailable (e.g. iOS Safari) */
+  }
+};
+document.addEventListener("fullscreenchange", onFullscreenChange);
+document.addEventListener("webkitfullscreenchange", onFullscreenChange);
 
 // ---------- Timer ----------
 let timerInterval = null;

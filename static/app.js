@@ -120,6 +120,10 @@ $("#timer-start").addEventListener("click", () => {
       clearInterval(timerInterval);
       timerInterval = null;
       $("#timer-start").textContent = "Start";
+      timerElapsed = 0;
+      renderTimer();
+      openJournalAt("tre", timerGoal);
+      return;
     }
 renderTimer();
   }, 1000);
@@ -143,9 +147,11 @@ function endGuidedSession() {
   clearInterval(timerInterval);
   timerInterval = null;
   $("#timer-start").textContent = "Start";
+  const elapsedMin = Math.round(timerElapsed / 60);
   timerElapsed = 0;
   renderTimer();
-  timerMsg("Session finished \u2014 log it in your Journal to count toward your stats.");
+  if (elapsedMin > 0) openJournalAt("tre", elapsedMin);
+  else timerMsg("Session finished \u2014 log it in your Journal to count toward your stats.");
 }
 renderTimer();
 
@@ -187,7 +193,7 @@ $("#qg-start").addEventListener("click", () => {
       $("#qg-end").hidden = true;
       qgElapsed = 0;
       renderQg();
-      qgMsg("Goal reached \u2014 log it in your Journal to count toward your stats.");
+      openJournalAt("qg", qgGoal);
       return;
     }
     renderQg();
@@ -198,9 +204,11 @@ $("#qg-end").addEventListener("click", () => {
   qgInterval = null;
   $("#qg-start").textContent = "Start";
   $("#qg-end").hidden = true;
+  const elapsedMin = Math.round(qgElapsed / 60);
   qgElapsed = 0;
   renderQg();
-  qgMsg("Practice finished \u2014 log it in your Journal to count toward your stats.");
+  if (elapsedMin > 0) openJournalAt("qg", elapsedMin);
+  else qgMsg("Practice finished \u2014 log it in your Journal to count toward your stats.");
 });
 $("#qg-reset").addEventListener("click", () => {
   clearInterval(qgInterval);
@@ -509,12 +517,14 @@ function endMeditation() {
   }
   clearInterval(medProgress.interval);
   medProgress.interval = null;
+  const elapsedMin = Math.round(medProgress.elapsed / 60);
   setMedPhase("ready");
   syncMedDisplay("00:00");
   if (ambientOn()) stopAmbient();
   playEndingBell();
-  $("#med-msg").textContent = "Sit finished \u2014 log it in your Journal to count toward your stats.";
-  setTimeout(() => ($("#med-msg").textContent = ""), 5000);
+  exitFocusMode();
+  if (elapsedMin > 0) openJournalAt("med", elapsedMin);
+  else $("#med-msg").textContent = "Sit finished \u2014 log it in your Journal to count toward your stats.";
 }
 
 function resetMeditation() {
@@ -534,8 +544,11 @@ function finishMeditation() {
   syncMedDisplay("00:00");
   playEndingBell();
   if (ambientOn()) stopAmbient();
-  $("#med-msg").textContent = "Sit complete \u2014 log it in your Journal to count toward your stats.";
-  setTimeout(() => ($("#med-msg").textContent = ""), 5000);
+  exitFocusMode();
+  const minutes = medProgress.elapsed > 0
+    ? Math.round(medProgress.elapsed / 60)
+    : Math.round(medProgress.total / 60);
+  openJournalAt("med", minutes);
 }
 
 function escapeHtml(str) {
@@ -712,6 +725,35 @@ document.addEventListener("click", (e) => {
   e.preventDefault();
   activateTab(link.dataset.goTab);
 });
+
+// Open the Journal at the chosen sub-tab, adding a just-ended timed session's
+// minutes to today's total so the entry can be completed right away.
+async function openJournalAt(sub, minutes) {
+  activateTab("journal");
+  $$(".sub-tab").forEach((t) => t.classList.toggle("active", t.dataset.sub === sub));
+  $("#journal-sub-tre").classList.toggle("hidden", sub !== "tre");
+  $("#journal-sub-med").classList.toggle("hidden", sub !== "med");
+  $("#journal-sub-qg").classList.toggle("hidden", sub !== "qg");
+  try {
+    await loadToday();
+  } catch (err) {
+    /* Keep whatever is already in the form if today's entry can't load */
+  }
+  const addMin = Math.round(minutes);
+  if (sub === "tre") {
+    const el = $("#minutes-input");
+    el.value = (parseInt(el.value, 10) || 0) + addMin;
+    $("#notes-input").focus();
+  } else if (sub === "med") {
+    const el = $("#med-minutes-input");
+    el.value = (parseInt(el.value, 10) || 0) + addMin;
+    $("#med-notes-input").focus();
+  } else {
+    const el = $("#qg-minutes-input");
+    el.value = (parseInt(el.value, 10) || 0) + addMin;
+    $("#qg-notes-input").focus();
+  }
+}
 
 // ---------- Pop-out notes editor ----------
 let notesModalTarget = null;

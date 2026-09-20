@@ -48,10 +48,10 @@ function buildExerciseCards() {
     card.innerHTML = `
       <h3 class="ex-card-name">${ex.name}</h3>
       <div class="video-wrap">
-        <iframe src="https://www.youtube-nocookie.com/embed/${videoId}?rel=0&playsinline=1"
+        <iframe src="https://www.youtube-nocookie.com/embed/${videoId}?rel=0&playsinline=1&enablejsapi=1"
           title="Guided ${escapeHtml(ex.name)} video" frameborder="0" loading="lazy"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-          allowfullscreen></iframe>
+          allowfullscreen data-video-cat="tre"></iframe>
       </div>
     `;
     exerciseList.appendChild(card);
@@ -65,7 +65,7 @@ function youtubeId(url) {
 
 // ---------- Guided session ----------
 $("#session-video").src =
-  "https://www.youtube-nocookie.com/embed/" + youtubeId(window.TRE_GUIDED_VIDEO) + "?rel=0&playsinline=1";
+  "https://www.youtube-nocookie.com/embed/" + youtubeId(window.TRE_GUIDED_VIDEO) + "?rel=0&playsinline=1&enablejsapi=1";
 
 // ---------- Fullscreen / landscape (PWA) ----------
 // When a video goes fullscreen, auto-rotate the app to landscape so
@@ -844,6 +844,94 @@ $("#save-qg-journal").addEventListener("click", async () => {
   loadQgHistory();
 });
 
+// ---------- Auto journal on guided video end ----------
+// When any guided video finishes, we automatically add a 15-minute journal
+// entry for that video's category so the practice counts toward stats.
+const VIDEO_CAT_FIELDS = {
+  tre: { minutes: "minutes", notes: "notes" },
+  med: { minutes: "medMinutes", notes: "medNotes" },
+  qg: { minutes: "qgMinutes", notes: "qgNotes" },
+};
+const GUIDED_VIDEO_NOTE = "Guided Video complete";
+
+function ensureYtJsApi(iframe) {
+  try {
+    const url = new URL(iframe.src, window.location.href);
+    if (!url.searchParams.get("enablejsapi")) {
+      url.searchParams.set("enablejsapi", "1");
+      iframe.src = url.toString();
+    }
+  } catch (err) {
+    /* Not a parseable URL — leave the embed untouched */
+  }
+}
+
+function refreshAllViews() {
+  loadToday();
+  refreshStats();
+  loadHistory();
+  loadMedHistory();
+  loadQgHistory();
+}
+
+async function logGuidedVideo(cat) {
+  const fields = VIDEO_CAT_FIELDS[cat];
+  if (!fields) return;
+  try {
+    const entry = await api(API.today);
+    const mins = typeof entry[fields.minutes] === "number" ? entry[fields.minutes] : 0;
+    entry[fields.minutes] = mins + 15;
+    const existing = (entry[fields.notes] || "").trim();
+    entry[fields.notes] = existing ? existing + "\n" + GUIDED_VIDEO_NOTE : GUIDED_VIDEO_NOTE;
+    await api(API.save, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(entry),
+    });
+    refreshAllViews();
+  } catch (err) {
+    console.error("Auto journaling at video end failed:", err);
+  }
+}
+
+function initVideoEndTracking() {
+  if (!(window.YT && window.YT.Player)) return;
+  $$("iframe[data-video-cat]").forEach((iframe) => {
+    if (!iframe.id) iframe.id = "yt-" + Math.random().toString(36).slice(2, 10);
+    ensureYtJsApi(iframe);
+    const cat = iframe.dataset.videoCat;
+    try {
+      const player = new YT.Player(iframe, {
+        events: {
+          onStateChange: (e) => {
+            if (e && e.data === 0) logGuidedVideo(cat);
+          },
+        },
+      });
+      window._ytVideoPlayers = window._ytVideoPlayers || [];
+      window._ytVideoPlayers.push(player);
+    } catch (err) {
+      console.error("Could not start video-end tracking:", err);
+    }
+  });
+}
+
+window.onYouTubeIframeAPIReady = function () {
+  initVideoEndTracking();
+};
+
+function loadYouTubeApi() {
+  if (window.YT && window.YT.Player) {
+    initVideoEndTracking();
+    return;
+  }
+  if (window._ytApiLoading) return;
+  window._ytApiLoading = true;
+  const tag = document.createElement("script");
+  tag.src = "https://www.youtube.com/iframe_api";
+  document.head.appendChild(tag);
+}
+
 function minutesFromNotes(notes) {
   const m = notes.match(/(\d{1,2})\s*(?:min|mins|minutes?)/i);
   return m ? parseInt(m[1], 10) : null;
@@ -1461,5 +1549,6 @@ function init() {
   loadMedHistory();
   loadQgHistory();
   refreshStats();
+  loadYouTubeApi();
 }
 init();

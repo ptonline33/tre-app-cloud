@@ -743,16 +743,28 @@ async function openJournalAt(sub, minutes) {
   if (sub === "tre") {
     const el = $("#minutes-input");
     el.value = (parseInt(el.value, 10) || 0) + addMin;
-    $("#notes-input").focus();
+    stageJournalNotes($("#notes-input"));
   } else if (sub === "med") {
     const el = $("#med-minutes-input");
     el.value = (parseInt(el.value, 10) || 0) + addMin;
-    $("#med-notes-input").focus();
+    stageJournalNotes($("#med-notes-input"));
   } else {
     const el = $("#qg-minutes-input");
     el.value = (parseInt(el.value, 10) || 0) + addMin;
-    $("#qg-notes-input").focus();
+    stageJournalNotes($("#qg-notes-input"));
   }
+}
+
+// Start a fresh completion block for the just-ended session. Minutes are
+// accumulated separately so the previous entry is never clobbered — instead a
+// timestamped block is appended below any earlier text and the caret is placed
+// at the end, ready for this session's notes (mirrors the guided-video auto-log).
+function stageJournalNotes(ta) {
+  const existing = ta.value.trim();
+  const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  ta.value = existing ? existing + "\n\n[" + stamp + "] " : "";
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
 // ---------- Pop-out notes editor ----------

@@ -18,6 +18,15 @@ function formatDate(dateStr) {
   return date.toLocaleDateString(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric" });
 }
 
+// Recent/history lists always render newest-first. Sort explicitly so the
+// display never depends on the order the API happens to return.
+function sortedEntriesNewest(entries) {
+  return entries
+    .slice()
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .reverse();
+}
+
 // ---------- Tabs ----------
 function activateTab(name) {
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
@@ -1037,7 +1046,7 @@ function renderHistoryList(container, entries, kind) {
     list.innerHTML = empty;
     return;
   }
-  entries.slice().reverse().forEach((e) => {
+  sortedEntriesNewest(entries).forEach((e) => {
     const item = document.createElement("div");
     item.className = "history-item";
     if (kind === "qg") {
@@ -1099,7 +1108,7 @@ function renderHistoryList(container, entries, kind) {
 const historyState = { kind: "tre", entries: [], index: 0 };
 
 function openHistory(kind, entries, dateStr) {
-  const list = entries.slice().reverse(); // newest first
+  const list = sortedEntriesNewest(entries); // newest first
   historyState.kind = kind;
   historyState.entries = list;
   historyState.index = list.findIndex((e) => e.date === dateStr);
@@ -1525,7 +1534,7 @@ function renderDashWeek(entries) {
 function renderDashRecent(entries) {
   const wrap = $("#dash-recent");
   const active = entries.filter((e) => isTreEntry(e) || isMedEntry(e) || isQgEntry(e));
-  const recent = active.slice().reverse().slice(0, 4);
+  const recent = sortedEntriesNewest(active).slice(0, 4);
   if (!recent.length) {
     wrap.innerHTML = '<p class="muted">Nothing logged yet. Start with a practice \u2014 then write a journal entry.</p>';
     return;

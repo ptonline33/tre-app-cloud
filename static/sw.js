@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE = "tre-app-cloud-v1";
+const CACHE = "tre-app-cloud-v2";
 
 const PRECACHE = [
   "/",

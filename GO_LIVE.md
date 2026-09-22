@@ -20,12 +20,19 @@ Prerequisites installed on this machine: `node`, `vercel` CLI, `gh`, `git`.
 7. Plan: **Free**.
 8. Wait 1–2 minutes for provisioning. You'll land on the project dashboard.
 
-## 2. Create the `entries` table
+## 2. Set up the database
 
 1. Left sidebar → **SQL Editor** → **New query**.
 2. Paste the entire contents of `supabase-schema.sql` (in this folder).
 3. Click **Run**. Expect "Success" in the status bar.
-4. Confirm the `entries` table exists under **Table Editor**.
+4. Confirm the `entries` and `journal_entries` tables exist under **Table Editor**.
+
+`supabase-schema.sql` creates both tables. `journal_entries` stores one row
+per practice session (TRE / meditation / Qi Gong) — the app's journal,
+history, stats, and dashboard all read from it, and each new session is
+saved as its own separate entry. If you already ran an older version of
+this file, re-run it: the migration flag on `entries` safely copies your
+old daily records into per-session journal entries once.
 
 `supabase-schema.sql` also enables Row Level Security. The default policy
 ("allow anon access") lets anyone with the anon key read/write everything.
@@ -90,7 +97,10 @@ On the local app (http://127.0.0.1:8432, still running):
 2. Open the deployed Vercel URL on any device → **Stats** tab → **Import
    backup** → pick that file.
 
-The entries are now stored in Supabase and shared by every device.
+The entries and per-session journal entries are now stored in Supabase and
+shared by every device. Backups (`version 2`) include both daily rows and the
+per-session journal; importing a version 1 backup converts the old daily
+records into separate session entries automatically.
 
 ## 7. Install the PWA
 
@@ -112,7 +122,7 @@ The entries are now stored in Supabase and shared by every device.
   header doesn't match the policy. Re-run the SQL from `supabase-schema.sql`
   (or the private policy above).
 - **Old page / service worker** — hard refresh; the service worker cache was
-  versioned (`tre-app-cloud-v1`) so it updates on new deploys.
+  versioned (`tre-app-cloud-v3`) so it updates on new deploys.
 
 ## Repo reference
 

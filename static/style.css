@@ -325,6 +325,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .history-item:hover .h-date { color: var(--accent-dark); }
 .h-date { font-weight: 600; font-size: 14px; display: flex; justify-content: space-between; gap: 6px; }
 .h-date .mood { color: var(--muted); font-weight: 400; font-size: 12.5px; }
+.h-date .h-time { color: var(--muted); font-weight: 400; font-size: 12px; }
 .h-preview { color: var(--muted); font-size: 13px; margin-top: 3px; max-height: 3em; overflow: hidden; }
 h-date .edit-ex { font-size: 11px; color: var(--accent); }
 
@@ -615,7 +616,7 @@ h-date .edit-ex { font-size: 11px; color: var(--accent); }
 }
 .hm-date { font-size: 16px; font-weight: 700; color: var(--accent-dark); }
 .hm-pos { color: var(--muted); font-size: 12px; }
-.history-meta .hm-mood, .history-meta .hm-min, .history-meta .hm-ex, .history-meta .hm-rounds {
+.history-meta .hm-mood, .history-meta .hm-min, .history-meta .hm-time, .history-meta .hm-ex, .history-meta .hm-rounds {
   background: var(--soft); border-radius: 999px; padding: 3px 11px; font-size: 13px;
 }
 .history-meta strong { font-weight: 600; }

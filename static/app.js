@@ -20,11 +20,18 @@ function formatDate(dateStr) {
 
 // Recent/history lists always render newest-first. Sort explicitly so the
 // display never depends on the order the API happens to return.
-function sortedEntriesNewest(entries) {
-  return entries
+// Per-session journal entries: newest session first (by date, then by the
+// time the session was started/recorded so several on one day stay ordered).
+function sortedSessionsNewest(sessions) {
+  return sessions
     .slice()
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
-    .reverse();
+    .sort((a, b) => {
+      const d = String(b.date).localeCompare(String(a.date));
+      if (d !== 0) return d;
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tb - ta;
+    });
 }
 
 // ---------- Tabs ----------
@@ -640,7 +647,10 @@ async function downloadBackup() {
     a.remove();
     URL.revokeObjectURL(url);
     const n = (data.entries || []).length;
-    $("#backup-msg").textContent = "Backup downloaded (" + n + " day" + (n === 1 ? "" : "s") + ") \u2713";
+    const m = (data.journalEntries || []).length;
+    $("#backup-msg").textContent =
+      "Backup downloaded (" + n + " day" + (n === 1 ? "" : "s") +
+      ", " + m + " journal entr" + (m === 1 ? "y" : "ies") + ") \u2713";
   } catch (e) {
     $("#backup-msg").textContent = "Backup failed \u2014 " + e.message;
   }
@@ -652,19 +662,17 @@ async function importBackup(file) {
   try {
     const text = await file.text();
     const payload = JSON.parse(text);
-    const entries = (payload && payload.entries) || payload;
+    const entries = payload && payload.entries ? payload.entries : Array.isArray(payload) ? payload : [];
     if (!Array.isArray(entries)) throw new Error("not a valid backup file");
     const out = await api("/api/restore", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entries: entries }),
+      body: JSON.stringify({ entries: entries, journalEntries: (payload && payload.journalEntries) || [] }),
     });
     if (out.error) throw new Error(out.error);
-    $("#backup-msg").textContent = "Restored " + out.restored + " day" + (out.restored === 1 ? "" : "s") + " \u2713";
-    refreshStats();
-    loadHistory();
-    loadMedHistory();
-    loadToday();
+    $("#backup-msg").textContent = "Restored " + out.restored + " record" + (out.restored === 1 ? "" : "s") + " \u2713";
+    resetJournalForms();
+    refreshJournalViews();
   } catch (e) {
     $("#backup-msg").textContent = "Import failed \u2014 " + e.message;
   }
@@ -713,8 +721,8 @@ $("#backup-file").addEventListener("change", (e) => {
 });
 
 
-// ---------- Journal ----------
-// Sub-tabs: TRE vs Meditation
+// ---------- Journal (per-session entries) ----------
+// Sub-tabs: TRE vs Meditation vs Qi Gong
 $$(".sub-tab").forEach((st) => {
   st.addEventListener("click", () => {
     $$(".sub-tab").forEach((t) => t.classList.remove("active"));
@@ -735,39 +743,69 @@ document.addEventListener("click", (e) => {
   activateTab(link.dataset.goTab);
 });
 
-// Open the Journal at the chosen sub-tab, adding a just-ended timed session's
-// minutes to today's total so the entry can be completed right away.
-async function openJournalAt(sub, minutes) {
+// Each completed practice session is stored as its own journal entry, for
+// every category. A journal form always edits exactly ONE session: a new one
+// (blank, minutes pre-filled when a timer just finished) or an existing one
+// reopened from History. Saving a new session inserts a fresh row — it never
+// merges into an earlier entry.
+const journalDraft = { tre: null, med: null, qg: null };
+
+function freshDraft(cat) {
+  return { id: null, date: todayStr(), category: cat, createdAt: null, mood: "", minutes: null, notes: "" };
+}
+
+function journalFormFields(cat) {
+  if (cat === "tre") return { mood: "#mood-select", minutes: "#minutes-input", notes: "#notes-input", dateLabel: "#journal-date" };
+  if (cat === "med") return { mood: "#med-mood-select", minutes: "#med-minutes-input", notes: "#med-notes-input", dateLabel: "#med-journal-date" };
+  return { mood: "#qg-mood-select", minutes: "#qg-minutes-input", notes: "#qg-notes-input", dateLabel: "#qg-journal-date" };
+}
+
+function fillJournalForm(cat, draft) {
+  const f = journalFormFields(cat);
+  $(f.mood).value = draft.mood || "";
+  $(f.minutes).value = draft.minutes != null ? draft.minutes : "";
+  $(f.notes).value = draft.notes || "";
+  $(f.dateLabel).textContent = formatDate(draft.date);
+}
+
+function readJournalForm(cat) {
+  const f = journalFormFields(cat);
+  const minutesRaw = $(f.minutes).value;
+  let minutes = minutesRaw !== "" ? parseInt(minutesRaw, 10) : null;
+  if (!minutes) minutes = minutesFromNotes($(f.notes).value);
+  return { mood: $(f.mood).value || null, minutes, notes: $(f.notes).value };
+}
+
+// Reset all three journal forms to a fresh, blank new-session entry.
+function resetJournalForms() {
+  ["tre", "med", "qg"].forEach((cat) => {
+    journalDraft[cat] = freshDraft(cat);
+    fillJournalForm(cat, journalDraft[cat]);
+  });
+}
+
+// Open the Journal at the chosen sub-tab. A fresh session entry is started:
+// minutes are pre-filled from the just-ended timer/sit and notes begin blank
+// (with a timestamp marker), so this session is recorded as its own new
+// journal entry instead of being merged into an earlier one.
+function openJournalAt(sub, minutes) {
   activateTab("journal");
   $$(".sub-tab").forEach((t) => t.classList.toggle("active", t.dataset.sub === sub));
   $("#journal-sub-tre").classList.toggle("hidden", sub !== "tre");
   $("#journal-sub-med").classList.toggle("hidden", sub !== "med");
   $("#journal-sub-qg").classList.toggle("hidden", sub !== "qg");
-  try {
-    await loadToday();
-  } catch (err) {
-    /* Keep whatever is already in the form if today's entry can't load */
-  }
-  const addMin = Math.round(minutes);
-  if (sub === "tre") {
-    const el = $("#minutes-input");
-    el.value = (parseInt(el.value, 10) || 0) + addMin;
-    stageJournalNotes($("#notes-input"));
-  } else if (sub === "med") {
-    const el = $("#med-minutes-input");
-    el.value = (parseInt(el.value, 10) || 0) + addMin;
-    stageJournalNotes($("#med-notes-input"));
-  } else {
-    const el = $("#qg-minutes-input");
-    el.value = (parseInt(el.value, 10) || 0) + addMin;
-    stageJournalNotes($("#qg-notes-input"));
-  }
+  const addMin = Math.round(minutes) || 0;
+  journalDraft[sub] = freshDraft(sub);
+  journalDraft[sub].minutes = addMin;
+  fillJournalForm(sub, journalDraft[sub]);
+  if (sub === "tre") stageJournalNotes($("#notes-input"));
+  else if (sub === "med") stageJournalNotes($("#med-notes-input"));
+  else stageJournalNotes($("#qg-notes-input"));
 }
 
-// Start a fresh completion block for the just-ended session. Minutes are
-// accumulated separately so the previous entry is never clobbered — instead a
-// timestamped block is appended below any earlier text and the caret is placed
-// at the end, ready for this session's notes (mirrors the guided-video auto-log).
+// Start a fresh journal entry for the just-ended session: notes begin with a
+// timestamp marker and the caret is placed at the end, ready for this
+// session's notes.
 function stageJournalNotes(ta) {
   const existing = ta.value.trim();
   const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -820,101 +858,56 @@ document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") $("#notes-save").click();
 });
 
-async function loadToday() {
-  const entry = await api(API.today);
-  $("#journal-date").textContent = formatDate(entry.date);
-  $("#mood-select").value = entry.mood || "";
-  $("#minutes-input").value = entry.minutes != null ? entry.minutes : "";
-  $("#notes-input").value = entry.notes || "";
-  // Meditation journal fields
-  $("#med-journal-date").textContent = formatDate(entry.date);
-  $("#med-mood-select").value = entry.medMood || "";
-  // The journal minutes field records minutes entered by hand; these feed
-  // your stats alongside the mood and notes.
-  const journalMin = entry.medMinutes != null && entry.medMinutes > 0 ? entry.medMinutes : 0;
-  $("#med-minutes-input").value = journalMin || "";
-  $("#med-notes-input").value = entry.medNotes || "";
-  // Qi Gong journal fields
-  $("#qg-journal-date").textContent = formatDate(entry.date);
-  $("#qg-mood-select").value = entry.qgMood || "";
-  const qgJournalMin = entry.qgMinutes != null && entry.qgMinutes > 0 ? entry.qgMinutes : 0;
-  $("#qg-minutes-input").value = qgJournalMin || "";
-  $("#qg-notes-input").value = entry.qgNotes || "";
+// Save the currently-edited session for `cat` as its own journal entry.
+// New sessions insert a fresh row; sessions reopened from History update the
+// same row (by id). After saving, the form resets so the next session starts
+// as a brand-new, separate entry.
+async function saveJournalSession(cat, msgEl) {
+  const draft = journalDraft[cat] || freshDraft(cat);
+  const form = readJournalForm(cat);
+  const payload = {
+    id: draft.id,
+    date: draft.date || todayStr(),
+    category: cat,
+    mood: form.mood,
+    minutes: form.minutes,
+    notes: form.notes,
+  };
+  await api(API.journalSave, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  journalDraft[cat] = freshDraft(cat);
+  fillJournalForm(cat, journalDraft[cat]);
+  const label = cat === "tre" ? "TRE" : cat === "med" ? "Meditation" : "Qi Gong";
+  msgEl.textContent = label + " journal entry saved \u2713";
+  setTimeout(() => (msgEl.textContent = ""), 3200);
+  refreshJournalViews();
 }
 
-$("#save-journal").addEventListener("click", async () => {
-  const entry = await api(API.today);
-  const mood = $("#mood-select").value;
-  const minutesValue = $("#minutes-input").value;
-  entry.mood = mood || null;
-  entry.minutes = minutesValue !== "" ? parseInt(minutesValue, 10) : null;
-  entry.notes = $("#notes-input").value;
-  if (entry.minutes === null) entry.minutes = minutesFromNotes(entry.notes);
-  const saved = await api(API.save, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(entry),
+$("#save-journal").addEventListener("click", () => {
+  saveJournalSession("tre", $("#journal-msg")).catch((err) => {
+    $("#journal-msg").textContent = "Save failed \u2014 " + err.message;
   });
-  $("#journal-msg").textContent = "TRE journal saved \u2713";
-  setTimeout(() => ($("#journal-msg").textContent = ""), 2500);
-  loadToday();
-  refreshStats();
-  loadHistory();
-  loadMedHistory();
 });
 
-$("#save-med-journal").addEventListener("click", async () => {
-  const entry = await api(API.today);
-  entry.medMood = $("#med-mood-select").value || null;
-  entry.medNotes = $("#med-notes-input").value;
-  const medMinRaw = $("#med-minutes-input").value;
-  entry.medMinutes = medMinRaw !== "" ? parseInt(medMinRaw, 10) : null;
-  if (!entry.medMinutes) entry.medMinutes = minutesFromNotes(entry.medNotes);
-  const saved = await api(API.save, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(entry),
+$("#save-med-journal").addEventListener("click", () => {
+  saveJournalSession("med", $("#med-journal-msg")).catch((err) => {
+    $("#med-journal-msg").textContent = "Save failed \u2014 " + err.message;
   });
-  // Clear the form so the fields are ready for a fresh entry.
-  $("#med-mood-select").value = "";
-  $("#med-minutes-input").value = "";
-  $("#med-notes-input").value = "";
-  const where = formatDate(entry.date);
-  $("#med-journal-msg").textContent = "Meditation journal saved for " + where + " \u2713";
-  setTimeout(() => ($("#med-journal-msg").textContent = ""), 3200);
-  refreshStats();
-  loadHistory();
-  loadMedHistory();
 });
 
-$("#save-qg-journal").addEventListener("click", async () => {
-  const entry = await api(API.today);
-  entry.qgMood = $("#qg-mood-select").value || null;
-  entry.qgNotes = $("#qg-notes-input").value;
-  const qgMinRaw = $("#qg-minutes-input").value;
-  entry.qgMinutes = qgMinRaw !== "" ? parseInt(qgMinRaw, 10) : null;
-  const saved = await api(API.save, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(entry),
+$("#save-qg-journal").addEventListener("click", () => {
+  saveJournalSession("qg", $("#qg-journal-msg")).catch((err) => {
+    $("#qg-journal-msg").textContent = "Save failed \u2014 " + err.message;
   });
-  const where = formatDate(entry.date);
-  $("#qg-journal-msg").textContent = "Qi Gong journal saved for " + where + " \u2713";
-  setTimeout(() => ($("#qg-journal-msg").textContent = ""), 3200);
-  refreshStats();
-  loadHistory();
-  loadMedHistory();
-  loadQgHistory();
 });
 
 // ---------- Auto journal on guided video end ----------
-// When any guided video finishes, we automatically add a 15-minute journal
-// entry for that video's category so the practice counts toward stats.
-const VIDEO_CAT_FIELDS = {
-  tre: { minutes: "minutes", notes: "notes" },
-  med: { minutes: "medMinutes", notes: "medNotes" },
-  qg: { minutes: "qgMinutes", notes: "qgNotes" },
-};
+// When any guided video finishes, we automatically add a separate 15-minute
+// journal entry for that video's category so the practice counts toward stats
+// as its own session.
 const GUIDED_VIDEO_NOTE = "Guided Video complete";
 
 function ensureYtJsApi(iframe) {
@@ -929,29 +922,22 @@ function ensureYtJsApi(iframe) {
   }
 }
 
-function refreshAllViews() {
-  loadToday();
-  refreshStats();
-  loadHistory();
-  loadMedHistory();
-  loadQgHistory();
-}
-
 async function logGuidedVideo(cat) {
-  const fields = VIDEO_CAT_FIELDS[cat];
-  if (!fields) return;
+  if (cat !== "tre" && cat !== "med" && cat !== "qg") return;
   try {
-    const entry = await api(API.today);
-    const mins = typeof entry[fields.minutes] === "number" ? entry[fields.minutes] : 0;
-    entry[fields.minutes] = mins + 15;
-    const existing = (entry[fields.notes] || "").trim();
-    entry[fields.notes] = existing ? existing + "\n" + GUIDED_VIDEO_NOTE : GUIDED_VIDEO_NOTE;
-    await api(API.save, {
+    await api(API.journalSave, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(entry),
+      body: JSON.stringify({
+        id: null,
+        date: todayStr(),
+        category: cat,
+        mood: null,
+        minutes: 15,
+        notes: GUIDED_VIDEO_NOTE,
+      }),
     });
-    refreshAllViews();
+    refreshJournalViews();
   } catch (err) {
     console.error("Auto journaling at video end failed:", err);
   }
@@ -1000,44 +986,39 @@ function minutesFromNotes(notes) {
   return m ? parseInt(m[1], 10) : null;
 }
 
-function isTreEntry(e) {
-  return (e.exercises && e.exercises.length) || e.minutes || e.hasNotes || !!e.mood;
-}
-function isMedEntry(e) {
-  return (e.meditations && e.meditations.length) || e.hasMedNotes || e.medMood ||
-    (e.medMinutes != null && e.medMinutes > 0);
-}
-function isQgEntry(e) {
-  return (e.qigongs && e.qigongs.length > 0) ||
-    (e.qgMinutes != null && e.qgMinutes > 0) ||
-    e.hasQgNotes || !!e.qgMood;
+// ---------- History (per-session entries) ----------
+// Every saved session is its own history entry, so several sessions on the
+// same day each appear separately — for all categories.
+let sessionsCache = [];
+
+async function loadJournalSessions() {
+  sessionsCache = await api(API.journal);
+  renderJournalHistory();
 }
 
-async function loadHistory() {
-  const entries = await api(API.entries);
-  const treEntries = entries.filter(isTreEntry);
-  renderHistoryList($("#journal-history"), treEntries, "tre");
-  renderHistoryList($("#history-tre-list"), treEntries, "tre");
+function renderJournalHistory() {
+  const tre = sessionsCache.filter((s) => s.category === "tre");
+  const med = sessionsCache.filter((s) => s.category === "med");
+  const qg = sessionsCache.filter((s) => s.category === "qg");
+  renderHistoryList($("#journal-history"), tre, "tre");
+  renderHistoryList($("#history-tre-list"), tre, "tre");
+  renderHistoryList($("#med-journal-history"), med, "med");
+  renderHistoryList($("#history-med-list"), med, "med");
+  renderHistoryList($("#qg-journal-history"), qg, "qg");
+  renderHistoryList($("#history-qg-list"), qg, "qg");
 }
 
-async function loadMedHistory() {
-  const entries = await api(API.entries);
-  const medEntries = entries.filter(isMedEntry);
-  renderHistoryList($("#med-journal-history"), medEntries, "med");
-  renderHistoryList($("#history-med-list"), medEntries, "med");
+// Session rows already carry their per-session minutes; nothing else to sum.
+function sessionTime(s) {
+  return s.createdAt
+    ? new Date(s.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "";
 }
 
-async function loadQgHistory() {
-  const entries = await api(API.entries);
-  const qgEntries = entries.filter(isQgEntry);
-  renderHistoryList($("#qg-journal-history"), qgEntries, "qg");
-  renderHistoryList($("#history-qg-list"), qgEntries, "qg");
-}
-
-function renderHistoryList(container, entries, kind) {
+function renderHistoryList(container, sessions, kind) {
   const list = container;
   list.innerHTML = "";
-  if (!entries.length) {
+  if (!sessions.length) {
     const empty = kind === "tre"
       ? '<p class="muted">No TRE entries yet. Write your first one!</p>'
       : kind === "med"
@@ -1046,72 +1027,33 @@ function renderHistoryList(container, entries, kind) {
     list.innerHTML = empty;
     return;
   }
-  sortedEntriesNewest(entries).forEach((e) => {
+  sortedSessionsNewest(sessions).forEach((s) => {
     const item = document.createElement("div");
     item.className = "history-item";
-    if (kind === "qg") {
-      const qgSessionTotal = (e.qigongs || []).reduce((s, q) => s + (q.minutes || 0), 0);
-      const qgJournalMin = e.qgMinutes != null && e.qgMinutes > 0 ? e.qgMinutes : 0;
-      const qgMin = qgSessionTotal + qgJournalMin;
-      const mins = qgMin ? ` &middot; <span class="mood">${qgMin} min</span>` : "";
-      const sessionCount = (e.qigongs || []).length;
-      const journalRound = e.qgMinutes != null && e.qgMinutes > 0 ? 1 : 0;
-      const rounds = sessionCount + journalRound;
-      const countInfo = rounds ? ` &middot; <span class="mood">${rounds} round${rounds > 1 ? "s" : ""}</span>` : "";
-      const mood = e.qgMood ? ` &middot; <span class="mood">${e.qgMood}</span>` : "";
-      const preview = e.hasQgNotes ? e.qgNotes : "";
-      item.innerHTML = `
-        <div class="h-date">
-          <span>${formatDate(e.date)}</span>
-          ${mood}${mins}${countInfo}
-        </div>
-        ${preview ? `<div class="h-preview">${escapeHtml(preview)}</div>` : ""}
-      `;
-    } else if (kind === "tre") {
-      const mood = e.mood ? ` &middot; <span class="mood">${e.mood}</span>` : "";
-      const mins = e.minutes ? ` &middot; <span class="mood">${e.minutes} min</span>` : "";
-      const exCount = e.exercises ? e.exercises.length : 0;
-      const exInfo = exCount ? ` &middot; <span class="mood">${exCount} exercise${exCount > 1 ? "s" : ""}</span>` : "";
-      const preview = e.hasNotes ? e.notes : "";
-      item.innerHTML = `
-        <div class="h-date">
-          <span>${formatDate(e.date)}</span>
-          ${mood}${mins}${exInfo}
-        </div>
-        ${preview ? `<div class="h-preview">${escapeHtml(preview)}</div>` : ""}
-      `;
-    } else {
-      const mood = e.medMood ? ` &middot; <span class="mood">${e.medMood}</span>` : "";
-      const medSessionTotal = (e.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
-      const journalMin = e.medMinutes != null && e.medMinutes > 0 ? e.medMinutes : 0;
-      const medMin = medSessionTotal + journalMin;
-      const mins = medMin ? ` &middot; <span class="mood">${medMin} min</span>` : "";
-      const sessionRounds = e.meditations ? e.meditations.length : 0;
-      const journalRound = e.medMinutes != null && e.medMinutes > 0 ? 1 : 0;
-      const rounds = sessionRounds + journalRound;
-      const roundInfo = rounds ? ` &middot; <span class="mood">${rounds} sit${rounds > 1 ? "s" : ""}</span>` : "";
-      const preview = e.hasMedNotes ? e.medNotes : "";
-      item.innerHTML = `
-        <div class="h-date">
-          <span>${formatDate(e.date)}</span>
-          ${mood}${mins}${roundInfo}
-        </div>
-        ${preview ? `<div class="h-preview">${escapeHtml(preview)}</div>` : ""}
-      `;
-    }
-    item.addEventListener("click", () => openHistory(kind, entries, e.date));
+    const mood = s.mood ? ` &middot; <span class="mood">${escapeHtml(s.mood)}</span>` : "";
+    const mins = s.minutes ? ` &middot; <span class="mood">${s.minutes} min</span>` : "";
+    const time = sessionTime(s) ? ` <span class="h-time">${sessionTime(s)}</span>` : "";
+    const preview = (s.notes || "").trim();
+    item.innerHTML = `
+      <div class="h-date">
+        <span>${formatDate(s.date)}</span>
+        ${time}${mood}${mins}
+      </div>
+      ${preview ? `<div class="h-preview">${escapeHtml(preview)}</div>` : ""}
+    `;
+    item.addEventListener("click", () => openHistory(kind, sessions, s.id));
     list.appendChild(item);
   });
 }
 
 // ---------- History detail browsing ----------
-const historyState = { kind: "tre", entries: [], index: 0 };
+const historyState = { kind: "tre", sessions: [], index: 0 };
 
-function openHistory(kind, entries, dateStr) {
-  const list = sortedEntriesNewest(entries); // newest first
+function openHistory(kind, sessions, id) {
+  const list = sortedSessionsNewest(sessions); // newest session first
   historyState.kind = kind;
-  historyState.entries = list;
-  historyState.index = list.findIndex((e) => e.date === dateStr);
+  historyState.sessions = list;
+  historyState.index = list.findIndex((s) => s.id === id);
   if (historyState.index < 0) historyState.index = 0;
   renderHistoryEntry();
   $("#history-overlay").classList.remove("hidden");
@@ -1124,10 +1066,10 @@ function closeHistory() {
 
 function renderHistoryEntry() {
   const kind = historyState.kind;
-  const list = historyState.entries;
+  const list = historyState.sessions;
   const idx = historyState.index;
-  const e = list[idx];
-  if (!e) return;
+  const s = list[idx];
+  if (!s) return;
 
   $("#history-prev").disabled = idx >= list.length - 1;
   $("#history-next").disabled = idx <= 0;
@@ -1138,86 +1080,20 @@ function renderHistoryEntry() {
     kind === "tre" ? "var(--accent-dark)" : kind === "med" ? "var(--warm)" : "var(--teal)";
 
   const pos = `${idx + 1} of ${list.length}`;
-  let meta;
-  if (kind === "tre") {
-    const mood = e.mood ? `<div class="hm-mood"><strong>Mood:</strong> ${escapeHtml(e.mood)}</div>` : "";
-    const mins = e.minutes ? `<div class="hm-min"><strong>Minutes:</strong> ${e.minutes}</div>` : "";
-    const exNames = (e.exercises || []).map((id) => {
-      const ex = window.TRE_EXERCISES.find((x) => x.id === id);
-      return ex ? ex.name : id;
-    });
-    const exercises = exNames.length
-      ? `<div class="hm-ex"><strong>Exercises:</strong> <span class="ex-tags">${exNames.map((n) => `<span class="ex-tag">${escapeHtml(n)}</span>`).join("")}</span></div>`
-      : "";
-    meta = ` ${mood}${mins}${exercises}`;
-  } else if (kind === "qg") {
-    const qgSessionTotal = (e.qigongs || []).reduce((s, q) => s + (q.minutes || 0), 0);
-    const qgJournalMin = e.qgMinutes != null && e.qgMinutes > 0 ? e.qgMinutes : 0;
-    const qgMin = qgSessionTotal + qgJournalMin;
-    const mins = qgMin ? `<div class="hm-min"><strong>Minutes:</strong> ${qgMin}</div>` : "";
-    const mood = e.qgMood ? `<div class="hm-mood"><strong>Mood:</strong> ${escapeHtml(e.qgMood)}</div>` : "";
-    const sessionCount = (e.qigongs || []).length;
-    const journalRound = e.qgMinutes != null && e.qgMinutes > 0 ? 1 : 0;
-    const totalRounds = sessionCount + journalRound;
-    const rounds = totalRounds ? `<div class="hm-rounds"><strong>Rounds:</strong> ${totalRounds}</div>` : "";
-    meta = `${mood}${mins}${rounds}`;
-  } else {
-    const mood = e.medMood ? `<div class="hm-mood"><strong>Mood:</strong> ${escapeHtml(e.medMood)}</div>` : "";
-    const medSessionTotal = (e.meditations || []).reduce((s, m) => s + (m.minutes || 0), 0);
-    const journalMin = e.medMinutes != null && e.medMinutes > 0 ? e.medMinutes : 0;
-    const medMin = medSessionTotal + journalMin;
-    const mins = medMin ? `<div class="hm-min"><strong>Minutes:</strong> ${medMin}</div>` : "";
-    const sessionRounds = (e.meditations || []).length;
-    const journalRound = e.medMinutes != null && e.medMinutes > 0 ? 1 : 0;
-    const totalRounds = sessionRounds + journalRound;
-    const rounds = totalRounds
-      ? `<div class="hm-rounds"><strong>Sits:</strong> ${totalRounds}</div>`
-      : "";
-    meta = `${mood}${mins}${rounds}`;
-  }
+  const mood = s.mood ? `<div class="hm-mood"><strong>Mood:</strong> ${escapeHtml(s.mood)}</div>` : "";
+  const mins = s.minutes ? `<div class="hm-min"><strong>Minutes:</strong> ${s.minutes}</div>` : "";
+  const time = sessionTime(s) ? `<div class="hm-time"><strong>Time:</strong> ${sessionTime(s)}</div>` : "";
 
   $("#history-meta").innerHTML = `
-    <div class="hm-date">${formatDate(e.date)}</div>
+    <div class="hm-date">${formatDate(s.date)}</div>
     <div class="hm-pos">${pos}</div>
-    ${meta}
+    ${time}${mood}${mins}
   `;
 
-  let body;
-  if (kind === "tre") {
-    const notes = e.notes
-      ? `<div class="hm-block"><h4>Notes</h4><p class="hm-notes">${escapeHtml(e.notes).replace(/\n/g, "<br>")}</p></div>`
-      : "";
-    const exNotes = Object.keys(e.exerciseNotes || {}).length
-      ? `<div class="hm-block"><h4>Exercise Notes</h4>${Object.keys(e.exerciseNotes).map((id) => {
-          const ex = window.TRE_EXERCISES.find((x) => x.id === id);
-          const name = ex ? ex.name : id;
-          return `<p class="hm-notes"><strong>${escapeHtml(name)}:</strong><br>${escapeHtml(e.exerciseNotes[id]).replace(/\n/g, "<br>")}</p>`;
-        }).join("")}</div>`
-      : "";
-    body = `<div class="hm-content">${notes || '<p class="muted">No notes recorded.</p>'}${exNotes}</div>`;
-  } else if (kind === "qg") {
-    const notes = e.qgNotes
-      ? `<div class="hm-block"><h4>Notes</h4><p class="hm-notes">${escapeHtml(e.qgNotes).replace(/\n/g, "<br>")}</p></div>`
-      : "";
-    const sessions = (e.qigongs || []).length
-      ? `<div class="hm-block"><h4>Qi Gong Sessions</h4>${e.qigongs.slice().reverse().map((q) =>
-          `<div class="hm-sit"><span class="med-s-type">Qi Gong</span><span>${q.minutes} min</span>${q.time ? `<span class="med-s-time">${new Date(q.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>` : ""}</div>`
-        ).join("")}</div>`
-      : "";
-    body = `<div class="hm-content">${notes}${sessions}</div>`;
-  } else {
-    const notes = e.medNotes
-      ? `<div class="hm-block"><h4>Notes</h4><p class="hm-notes">${escapeHtml(e.medNotes).replace(/\n/g, "<br>")}</p></div>`
-      : "";
-    const sits = (e.meditations || []).length
-      ? `<div class="hm-block"><h4>Sits</h4>${e.meditations.slice().reverse().map((m) =>
-          `<div class="hm-sit"><span class="med-s-type">${escapeHtml(m.type)}</span><span>${m.minutes} min</span>${m.time ? `<span class="med-s-time">${new Date(m.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>` : ""}</div>`
-        ).join("")}</div>`
-      : "";
-    body = `<div class="hm-content">${notes || '<p class="muted">No notes recorded.</p>'}${sits}</div>`;
-  }
-
-  $("#history-body").innerHTML = body;
+  const notes = (s.notes || "").trim()
+    ? `<div class="hm-block"><h4>Notes</h4><p class="hm-notes">${escapeHtml(s.notes).replace(/\n/g, "<br>")}</p></div>`
+    : "";
+  $("#history-body").innerHTML = `<div class="hm-content">${notes || '<p class="muted">No notes recorded.</p>'}</div>`;
 }
 
 $("#history-close").addEventListener("click", closeHistory);
@@ -1225,7 +1101,7 @@ $("#history-overlay").addEventListener("click", (e) => {
   if (e.target.id === "history-overlay") closeHistory();
 });
 $("#history-prev").addEventListener("click", () => {
-  if (historyState.index < historyState.entries.length - 1) {
+  if (historyState.index < historyState.sessions.length - 1) {
     historyState.index++;
     renderHistoryEntry();
   }
@@ -1237,69 +1113,95 @@ $("#history-next").addEventListener("click", () => {
   }
 });
 $("#history-edit").addEventListener("click", () => {
-  const e = historyState.entries[historyState.index];
-  if (!e) return;
+  const s = historyState.sessions[historyState.index];
+  if (!s) return;
   closeHistory();
-  loadEntryIntoForm(e.date, historyState.kind);
+  loadEntryFromSession(s.id);
 });
 
-async function loadEntryIntoForm(dateStr, sub) {
-  await loadToday();
-  const entry = await api(API.entryFor(dateStr));
-  // switch to journal tab
+// Reopen an existing session entry in the journal form so it can be edited.
+// Editing updates the same row (by id) — it stays its own separate journal
+// entry and is never merged into another session.
+async function loadEntryFromSession(id) {
+  const s = historyState.sessions.find((x) => x.id === id) || sessionsCache.find((x) => x.id === id);
+  if (!s) return;
+  const sub = s.category;
   activateTab("journal");
-  // switch sub-tab
   $$(".sub-tab").forEach((t) => t.classList.toggle("active", t.dataset.sub === sub));
   $("#journal-sub-tre").classList.toggle("hidden", sub !== "tre");
   $("#journal-sub-med").classList.toggle("hidden", sub !== "med");
   $("#journal-sub-qg").classList.toggle("hidden", sub !== "qg");
-  // load forms
-  $("#journal-date").textContent = formatDate(entry.date);
-  $("#mood-select").value = entry.mood || "";
-  $("#minutes-input").value = entry.minutes != null ? entry.minutes : "";
-  $("#notes-input").value = entry.notes || "";
-  $("#med-journal-date").textContent = formatDate(entry.date);
-  $("#med-mood-select").value = entry.medMood || "";
-  const journalMin = entry.medMinutes != null && entry.medMinutes > 0 ? entry.medMinutes : 0;
-  $("#med-minutes-input").value = journalMin || "";
-  $("#med-notes-input").value = entry.medNotes || "";
-  // Qi Gong journal fields
-  $("#qg-journal-date").textContent = formatDate(entry.date);
-  $("#qg-mood-select").value = entry.qgMood || "";
-  const qgJournalMin = entry.qgMinutes != null && entry.qgMinutes > 0 ? entry.qgMinutes : 0;
-  $("#qg-minutes-input").value = qgJournalMin || "";
-  $("#qg-notes-input").value = entry.qgNotes || "";
+  journalDraft[sub] = {
+    id: s.id,
+    date: s.date || todayStr(),
+    category: sub,
+    createdAt: s.createdAt,
+    mood: s.mood || "",
+    minutes: s.minutes,
+    notes: s.notes || "",
+  };
+  fillJournalForm(sub, journalDraft[sub]);
   if (sub === "med") $("#med-notes-input").focus();
   else if (sub === "qg") $("#qg-notes-input").focus();
   else $("#notes-input").focus();
 }
 
 // ---------- Stats ----------
-function computeStats(entries) {
-  const activeDays = entries.filter(
-    (e) =>
-      (e.exercises && e.exercises.length) ||
-      e.hasNotes ||
-      !!e.mood ||
-      e.minutes
-  );
-  const totalSessions = activeDays.length;
-  const totalMinutes = entries.reduce((sum, e) => sum + (e.minutes || 0), 0);
+// Stats are computed from the per-session journal entries only, for every
+// category. Multiple sessions on one day each count as separate sessions and
+// their minutes add up for that day.
+function computeStats(sessions) {
+  const daySet = (list) => {
+    const m = {};
+    list.forEach((s) => (m[s.date] = true));
+    return m;
+  };
+  const sumMinutes = (list) => list.reduce((sum, s) => sum + (s.minutes || 0), 0);
+  const todayKey = todayStr();
 
-  const dates = new Set(activeDays.map((e) => e.date));
+  const tre = sessions.filter((s) => s.category === "tre");
+  const med = sessions.filter((s) => s.category === "med");
+  const qg = sessions.filter((s) => s.category === "qg");
 
-  // Streak calculation (consecutive days ending today or yesterday).
-  const byDay = {};
-  activeDays.forEach((e) => (byDay[e.date] = true));
+  const byDay = daySet(tre);
+  const byMedDay = daySet(med);
+  const qgByDay = daySet(qg);
 
-  let currentStreak = 0;
+  const todaysMed = med.filter((s) => s.date === todayKey);
+  const todaysQg = qg.filter((s) => s.date === todayKey);
+
+  return {
+    totalSessions: tre.length,
+    totalMinutes: sumMinutes(tre),
+    currentStreak: currentStreakFor(byDay),
+    longest: longestStreakFor(byDay),
+    byDay,
+    totalPracticeDays: new Set([...Object.keys(byDay), ...Object.keys(byMedDay), ...Object.keys(qgByDay)]).size,
+    medMinutes: sumMinutes(med),
+    medToday: sumMinutes(todaysMed),
+    medRounds: todaysMed.length,
+    medStreak: currentStreakFor(byMedDay),
+    byMedDay,
+    qgMinutes: sumMinutes(qg),
+    qgToday: sumMinutes(todaysQg),
+    qgRounds: todaysQg.length,
+    qgStreak: currentStreakFor(qgByDay),
+    qgByDay,
+  };
+}
+
+function currentStreakFor(byDay) {
+  let streak = 0;
   let d = new Date();
   if (!byDay[todayStr()]) d.setDate(d.getDate() - 1);
   while (byDay[dateKey(d)]) {
-    currentStreak++;
+    streak++;
     d.setDate(d.getDate() - 1);
   }
+  return streak;
+}
 
+function longestStreakFor(byDay) {
   let longest = 0;
   let run = 0;
   let prev = null;
@@ -1310,64 +1212,7 @@ function computeStats(entries) {
     longest = Math.max(longest, run);
     prev = ds;
   }
-
-  // Meditation stats — journal entries only.
-  const medMinForDay = (e) => typeof e.medMinutes === "number" && e.medMinutes > 0 ? e.medMinutes : 0;
-  const isMedDay = (e) => typeof e.medMinutes === "number" && e.medMinutes > 0;
-
-  const medMinutes = entries.reduce((sum, e) => sum + medMinForDay(e), 0);
-  const todaysEntry = entries.find((e) => e.date === todayStr());
-  const medToday = todaysEntry ? medMinForDay(todaysEntry) : 0;
-  const medRounds = medToday > 0 ? 1 : 0;
-  const byMedDay = {};
-  entries.forEach((e) => {
-    if (isMedDay(e)) byMedDay[e.date] = true;
-  });
-  let medStreak = 0;
-  let md = new Date();
-  if (!byMedDay[todayStr()]) md.setDate(md.getDate() - 1);
-  while (byMedDay[dateKey(md)]) {
-    medStreak++;
-    md.setDate(md.getDate() - 1);
-  }
-
-  // Qi Gong stats — journal entries only.
-  const qgMinForDay = (e) => typeof e.qgMinutes === "number" && e.qgMinutes > 0 ? e.qgMinutes : 0;
-  const isQgDay = (e) => typeof e.qgMinutes === "number" && e.qgMinutes > 0;
-  const qgMinutes = entries.reduce((sum, e) => sum + qgMinForDay(e), 0);
-  const todaysQg = todaysEntry ? qgMinForDay(todaysEntry) : 0;
-  const qgRounds = todaysQg > 0 ? 1 : 0;
-  const qgByDay = {};
-  entries.forEach((e) => {
-    if (isQgDay(e)) qgByDay[e.date] = true;
-  });
-  let qgStreak = 0;
-  let qd = new Date();
-  if (!qgByDay[todayStr()]) qd.setDate(qd.getDate() - 1);
-  while (qgByDay[dateKey(qd)]) {
-    qgStreak++;
-    qd.setDate(qd.getDate() - 1);
-  }
-
-  return {
-    totalSessions,
-    totalMinutes,
-    currentStreak,
-    longest,
-    byDay,
-    totalPracticeDays:
-      new Set([...activeDays.map((e) => e.date), ...Object.keys(byMedDay), ...Object.keys(qgByDay)]).size,
-    medMinutes,
-    medRounds,
-    medStreak,
-    byMedDay,
-    medToday,
-    qgMinutes,
-    qgToday: todaysQg,
-    qgRounds,
-    qgStreak,
-    qgByDay,
-  };
+  return longest;
 }
 
 function dateKey(d) {
@@ -1383,27 +1228,31 @@ function dayDiff(a, b) {
   return Math.round((db - da) / 86400000);
 }
 
-function refreshStats() {
-  return api(API.entries).then((entries) => {
-    const s = computeStats(entries);
-    $("#stat-sessions").textContent = s.totalSessions;
-    $("#stat-streak").textContent = s.currentStreak;
-    $("#stat-streak-sub").textContent = s.currentStreak === 1 ? "day" : "days";
-    $("#stat-longest").textContent = s.longest;
-    $("#stat-minutes").textContent = s.totalMinutes;
-    $("#stat-med-minutes").textContent = s.medMinutes;
-    $("#stat-med-today").textContent = s.medToday;
-    $("#stat-med-sessions").textContent = s.medRounds;
-    $("#stat-med-streak").textContent = s.medStreak;
-    renderWeek(s.byDay, $("#week-view"));
-    renderWeek(s.byMedDay || {}, $("#med-week-view"));
-    $("#stat-qg-minutes").textContent = s.qgMinutes;
-    $("#stat-qg-today").textContent = s.qgToday;
-    $("#stat-qg-sessions").textContent = s.qgRounds;
-    $("#stat-qg-streak").textContent = s.qgStreak;
-    renderWeek(s.qgByDay || {}, $("#qg-week-view"));
-    return renderDashboard();
-  });
+// Loads all sessions once and refreshes History, Stats, and the Dashboard.
+async function refreshJournalViews() {
+  await loadJournalSessions();
+  const s = computeStats(sessionsCache);
+  renderStats(s);
+  renderDashboard(sessionsCache, s);
+}
+
+function renderStats(s) {
+  $("#stat-sessions").textContent = s.totalSessions;
+  $("#stat-streak").textContent = s.currentStreak;
+  $("#stat-streak-sub").textContent = s.currentStreak === 1 ? "day" : "days";
+  $("#stat-longest").textContent = s.longest;
+  $("#stat-minutes").textContent = s.totalMinutes;
+  $("#stat-med-minutes").textContent = s.medMinutes;
+  $("#stat-med-today").textContent = s.medToday;
+  $("#stat-med-sessions").textContent = s.medRounds;
+  $("#stat-med-streak").textContent = s.medStreak;
+  renderWeek(s.byDay, $("#week-view"));
+  renderWeek(s.byMedDay || {}, $("#med-week-view"));
+  $("#stat-qg-minutes").textContent = s.qgMinutes;
+  $("#stat-qg-today").textContent = s.qgToday;
+  $("#stat-qg-sessions").textContent = s.qgRounds;
+  $("#stat-qg-streak").textContent = s.qgStreak;
+  renderWeek(s.qgByDay || {}, $("#qg-week-view"));
 }
 
 function renderWeek(byDay, container) {
@@ -1448,12 +1297,22 @@ function dashGreeting() {
   $("#dash-sub").textContent = DASH_QUOTES[day % DASH_QUOTES.length];
 }
 
-function renderDashToday(e) {
+function renderDashToday(sessions) {
   const wrap = $("#dash-today");
-  const tre = e ? { min: e.minutes, mood: e.mood, note: e.hasNotes ? e.notes : "" } : null;
-  const med = e ? { min: e.medMinutes, mood: e.medMood, note: e.hasMedNotes ? e.medNotes : "" } : null;
-  const qg = e ? { min: e.qgMinutes, mood: e.qgMood, note: e.hasQgNotes ? e.qgNotes : "" } : null;
-  const hasAny = [tre, med, qg].some((p) => p && (p.min || p.mood || p.note));
+  const today = todayStr();
+  const agg = (list) => {
+    const min = list.reduce((sum, s) => sum + (s.minutes || 0), 0);
+    const newest = list.length ? sortedSessionsNewest(list)[0] : null;
+    return {
+      min: min || null,
+      mood: newest && newest.mood ? newest.mood : null,
+      note: newest && (newest.notes || "").trim() ? newest.notes : "",
+    };
+  };
+  const tre = agg(sessions.filter((s) => s.category === "tre" && s.date === today));
+  const med = agg(sessions.filter((s) => s.category === "med" && s.date === today));
+  const qg = agg(sessions.filter((s) => s.category === "qg" && s.date === today));
+  const hasAny = [tre, med, qg].some((p) => p.min || p.mood || p.note);
   if (!hasAny) {
     wrap.innerHTML =
       '<p class="muted">Nothing recorded yet today.</p>' +
@@ -1465,7 +1324,7 @@ function renderDashToday(e) {
     const noteHtml = p.note ? `<div class="h-preview">${escapeHtml(p.note)}</div>` : "";
     return `<div class="dash-row"><span class="dash-row-name"><span class="dk ${cls}"></span>${name}</span><span class="dash-row-val">${val || "not logged"}</span></div>${noteHtml}`;
   };
-  const total = (tre ? tre.min || 0 : 0) + (med ? med.min || 0 : 0) + (qg ? qg.min || 0 : 0);
+  const total = (tre.min || 0) + (med.min || 0) + (qg.min || 0);
   wrap.innerHTML =
     row("TRE", "dk-tre", tre) +
     row("Meditation", "dk-med", med) +
@@ -1495,66 +1354,76 @@ function renderDashStats(s) {
     .join("");
 }
 
-function renderDashWeek(entries) {
+function renderDashWeek(sessions) {
   const wrap = $("#dash-week");
   wrap.innerHTML = "";
   const byDate = {};
   const weekdays = ["S", "M", "T", "W", "T", "F", "S"];
   const today = new Date();
-  entries.forEach((e) => (byDate[e.date] = e));
+  sessions.forEach((s) => (byDate[s.date] = (byDate[s.date] || []).concat(s)));
   for (let i = 13; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
     const key = dateKey(d);
-    const e = byDate[key];
+    const list = byDate[key] || [];
     const tile = document.createElement("div");
     tile.className = "day-tile";
-    if (e) tile.classList.add("has-entry");
+    if (list.length) tile.classList.add("has-entry");
     if (key === todayStr()) tile.classList.add("today");
+    const kinds = { tre: false, med: false, qg: false };
+    list.forEach((s) => (kinds[s.category] = true));
     const dots = [];
-    if (e && isTreEntry(e)) dots.push('<span class="dk dk-tre"></span>');
-    if (e && isMedEntry(e)) dots.push('<span class="dk dk-med"></span>');
-    if (e && isQgEntry(e)) dots.push('<span class="dk dk-qg"></span>');
+    if (kinds.tre) dots.push('<span class="dk dk-tre"></span>');
+    if (kinds.med) dots.push('<span class="dk dk-med"></span>');
+    if (kinds.qg) dots.push('<span class="dk dk-qg"></span>');
     tile.innerHTML =
       `<span class="dash-tile-dots">${dots.join("") || '&nbsp;'}</span>` +
       `<span>${weekdays[d.getDay()]}<br>${d.getDate()}</span>`;
-    if (e) {
+    if (list.length) {
       const practiced = [
-        isTreEntry(e) && "TRE",
-        isMedEntry(e) && "Meditation",
-        isQgEntry(e) && "Qi Gong",
+        kinds.tre && "TRE",
+        kinds.med && "Meditation",
+        kinds.qg && "Qi Gong",
       ].filter(Boolean).join(", ");
       tile.title = formatDate(key) + " \u2014 " + practiced;
-      tile.addEventListener("click", () => loadEntryIntoForm(key, "tre"));
+      tile.addEventListener("click", () => {
+        const primary = list.find((s) => s.category === "tre") || list[0];
+        if (primary) loadEntryFromSession(primary.id);
+      });
     }
     wrap.appendChild(tile);
   }
 }
 
-function renderDashRecent(entries) {
+function renderDashRecent(sessions) {
   const wrap = $("#dash-recent");
-  const active = entries.filter((e) => isTreEntry(e) || isMedEntry(e) || isQgEntry(e));
-  const recent = sortedEntriesNewest(active).slice(0, 4);
-  if (!recent.length) {
+  const byDate = {};
+  sessions.forEach((s) => (byDate[s.date] = (byDate[s.date] || []).concat(s)));
+  const days = Object.keys(byDate)
+    .map((date) => ({ date, list: byDate[date] }))
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .slice(0, 4);
+  if (!days.length) {
     wrap.innerHTML = '<p class="muted">Nothing logged yet. Start with a practice \u2014 then write a journal entry.</p>';
     return;
   }
-  recent.forEach((e) => {
+  days.forEach(({ date, list }) => {
     const kinds = [];
-    if (isTreEntry(e)) kinds.push(["TRE", "dk-b-tre"]);
-    if (isMedEntry(e)) kinds.push(["Meditation", "dk-b-med"]);
-    if (isQgEntry(e)) kinds.push(["Qi Gong", "dk-b-qg"]);
+    if (list.some((s) => s.category === "tre")) kinds.push(["TRE", "dk-b-tre"]);
+    if (list.some((s) => s.category === "med")) kinds.push(["Meditation", "dk-b-med"]);
+    if (list.some((s) => s.category === "qg")) kinds.push(["Qi Gong", "dk-b-qg"]);
     const badgeHtml = kinds
       .map(([name, cls]) => `<span class="dash-badge ${cls}">${name}</span>`)
       .join(" ");
-    const mins = (e.minutes || 0) + (e.medMinutes || 0) + (e.qgMinutes || 0);
-    const mood = e.mood || e.medMood || e.qgMood;
-    const note = e.notes || e.medNotes || e.qgNotes || "";
+    const mins = list.reduce((sum, s) => sum + (s.minutes || 0), 0);
+    const newest = sortedSessionsNewest(list)[0];
+    const mood = newest ? newest.mood : null;
+    const note = newest ? (newest.notes || "").trim() : "";
     const item = document.createElement("div");
     item.className = "history-item dash-recent-item";
     item.innerHTML = `
       <div class="h-date">
-        <span>${formatDate(e.date)}</span><span>${badgeHtml}</span>
+        <span>${formatDate(date)}</span><span>${badgeHtml}</span>
       </div>
       <div class="h-date">
         <span>${mins ? `${mins} min` : ""}${mood ? `${mins ? " &middot; " : ""}<span class="mood">${escapeHtml(mood)}</span>` : ""}</span>
@@ -1562,22 +1431,19 @@ function renderDashRecent(entries) {
       ${note ? `<div class="h-preview">${escapeHtml(note)}</div>` : ""}
     `;
     item.addEventListener("click", () => {
-      const kind = isTreEntry(e) ? "tre" : isMedEntry(e) ? "med" : "qg";
-      const filtered = entries.filter(kind === "tre" ? isTreEntry : kind === "med" ? isMedEntry : isQgEntry);
-      openHistory(kind, filtered, e.date);
+      const primary = list.find((s) => s.category === "tre") || list[0];
+      if (primary) openHistory(primary.category, list, primary.id);
     });
     wrap.appendChild(item);
   });
 }
 
-function renderDashboard() {
-  return api(API.entries).then((entries) => {
-    dashGreeting();
-    renderDashStats(computeStats(entries));
-    renderDashToday(entries.find((x) => x.date === todayStr()));
-    renderDashWeek(entries);
-    renderDashRecent(entries);
-  });
+function renderDashboard(sessions, s) {
+  dashGreeting();
+  renderDashStats(s || computeStats(sessions));
+  renderDashToday(sessions);
+  renderDashWeek(sessions);
+  renderDashRecent(sessions);
 }
 
 // ---------- Install (PWA) ----------
@@ -1607,11 +1473,8 @@ window.addEventListener("appinstalled", () => {
 function init() {
   dashGreeting();
   buildExerciseCards();
-  loadToday();
-  loadHistory();
-  loadMedHistory();
-  loadQgHistory();
-  refreshStats();
+  resetJournalForms();
+  refreshJournalViews();
   loadYouTubeApi();
 }
 init();

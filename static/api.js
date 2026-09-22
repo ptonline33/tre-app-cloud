@@ -5,9 +5,11 @@
 
 "use strict";
 
-const SB = window.SUPABASE || { url: "", anon: "", table: "entries" };
+const SB = window.SUPABASE || { url: "", anon: "", table: "entries", journalTable: "journal_entries" };
 const SB_TABLE = SB.table || "entries";
+const SB_JOURNAL = SB.journalTable || "journal_entries";
 const SB_REST = SB.url.replace(/\/+$/, "") + "/rest/v1/" + SB_TABLE;
+const SB_JOURNAL_REST = SB.url.replace(/\/+$/, "") + "/rest/v1/" + SB_JOURNAL;
 
 const API = {
   today: "/api/today",
@@ -15,6 +17,8 @@ const API = {
   entryFor: (date) => `/api/entry/${date}`,
   save: "/api/save",
   backup: "/api/backup",
+  journal: "/api/journal",
+  journalSave: "/api/journal/save",
 };
 
 function sbToday() {
@@ -94,7 +98,37 @@ function cleanEntry(e) {
   return out;
 }
 
-// Compact shape used by the History/Stats lists (mirrors server.py /api/entries).
+// Normalize a per-session journal entry into the app's session shape.
+function cleanSession(e) {
+  const out = {
+    id: e && e.id ? String(e.id) : null,
+    date: (e && e.date) || sbToday(),
+    category: e && e.category === "med" ? "med" : e && e.category === "qg" ? "qg" : "tre",
+    createdAt: (e && e.createdAt) || null,
+    mood: null,
+    minutes: null,
+    notes: "",
+  };
+  if (!e || typeof e !== "object") return out;
+  if (e.mood !== undefined && e.mood !== null && String(e.mood).trim() !== "") out.mood = e.mood;
+  if (typeof e.minutes === "number" && Number.isFinite(e.minutes)) out.minutes = Math.max(0, Math.round(e.minutes));
+  if (typeof e.notes === "string") out.notes = e.notes.trim();
+  return out;
+}
+
+// Shape sent to Supabase for an insert/update of one session entry.
+function sessionRow(s) {
+  const clean = cleanSession(s);
+  return {
+    date: clean.date,
+    category: clean.category,
+    mood: clean.mood,
+    minutes: clean.minutes,
+    notes: clean.notes,
+  };
+}
+
+// Compact shape used by History/Stats/Dashboard lists.
 function listEntry(e) {
   return {
     date: e.date,
@@ -131,9 +165,13 @@ function sbHeaders(extra) {
 
 // Small wrapper that turns HTTP/network failures into readable Errors.
 async function sbFetch(path, opts) {
+  opts = opts || {};
+  const base = opts.base || SB_REST;
+  const fetchOpts = Object.assign({ cache: "no-store" }, opts);
+  delete fetchOpts.base;
   let resp;
   try {
-    resp = await fetch(SB_REST + path, Object.assign({ cache: "no-store" }, opts));
+    resp = await fetch(base + path, fetchOpts);
   } catch (err) {
     throw new Error("Cannot reach Supabase: " + err.message);
   }
@@ -180,13 +218,100 @@ async function api(path, options) {
 
   // GET /api/backup
   if (p === API.backup) {
-    const rows = await sbFetch("?select=*&order=date.asc", { method: "GET", headers: sbHeaders() });
+    const [rows, sessions] = await Promise.all([
+      sbFetch("?select=*&order=date.asc", { method: "GET", headers: sbHeaders() }),
+      sbFetch("?select=*&order=createdAt.asc", { method: "GET", headers: sbHeaders(), base: SB_JOURNAL_REST }),
+    ]);
     return {
       type: "omarchy-tre-practice",
-      version: 1,
+      version: 2,
       exported: new Date().toISOString(),
       entries: (rows || []).map(cleanEntry),
+      journalEntries: (sessions || []).map(cleanSession),
     };
+  }
+
+  // GET /api/journal — every per-session journal entry, newest first.
+  if (p === API.journal) {
+    const rows = await sbFetch("?select=*&order=createdAt.desc", { method: "GET", headers: sbHeaders(), base: SB_JOURNAL_REST });
+    return (rows || []).map(cleanSession);
+  }
+
+  // POST /api/journal/save — insert a new session entry, or update it when
+  // an id is provided (editing an existing session from History). A new
+  // session always creates a separate row; nothing is merged.
+  if (p === API.journalSave) {
+    const clean = cleanSession(body || {});
+    const payload = sessionRow(clean);
+    if (clean.id) {
+      payload.createdAt = clean.createdAt || new Date().toISOString();
+      const saved = await sbFetch("?id=eq." + encodeURIComponent(clean.id), {
+        method: "PATCH",
+        headers: sbHeaders({ Prefer: "return=representation" }),
+        body: JSON.stringify(payload),
+      });
+      return cleanSession(Array.isArray(saved) ? saved[0] : saved);
+    }
+    payload.createdAt = new Date().toISOString();
+    const saved = await sbFetch("", {
+      method: "POST",
+      headers: sbHeaders({ Prefer: "return=representation" }),
+      body: JSON.stringify(payload),
+    });
+    return cleanSession(Array.isArray(saved) ? saved[0] : saved);
+  }
+
+  // POST /api/restore — bulk upsert from a backup (legacy daily rows + per-session entries)
+  if (p === "/api/restore") {
+    const items = (body && body.entries) || [];
+    const sessionsIn = (body && body.journalEntries) || [];
+    const rows = items
+      .filter((i) => i && /^\d{4}-\d{2}-\d{2}$/.test(String(i.date)))
+      .map(cleanEntry);
+    if (rows.length) {
+      await sbFetch("?on_conflict=date", {
+        method: "POST",
+        headers: sbHeaders({ Prefer: "resolution=merge-duplicates,return=minimal" }),
+        body: JSON.stringify(rows),
+      });
+    }
+
+    // Session rows from a current backup. For an older backup that only has
+    // combined daily entries, convert each category block into its own
+    // session entry so the data is visible in the per-session journal.
+    let sessionRows = sessionsIn
+      .filter((s) => s && s.id && /^\d{4}-\d{2}-\d{2}$/.test(String(s.date)))
+      .map(cleanSession);
+    if (!sessionRows.length && rows.length) {
+      rows.forEach((e) => {
+        if (e.mood || e.minutes || (e.notes || "").trim()) {
+          sessionRows.push(cleanSession({ date: e.date, category: "tre", mood: e.mood, minutes: e.minutes, notes: e.notes }));
+        }
+        if (e.medMood || e.medMinutes || (e.medNotes || "").trim()) {
+          sessionRows.push(cleanSession({ date: e.date, category: "med", mood: e.medMood, minutes: e.medMinutes, notes: e.medNotes }));
+        }
+        if (e.qgMood || e.qgMinutes || (e.qgNotes || "").trim()) {
+          sessionRows.push(cleanSession({ date: e.date, category: "qg", mood: e.qgMood, minutes: e.qgMinutes, notes: e.qgNotes }));
+        }
+      });
+    }
+    const withIds = sessionRows.filter((s) => s.id);
+    if (withIds.length) {
+      await sbFetch("?on_conflict=id", {
+        method: "POST",
+        headers: sbHeaders({ Prefer: "resolution=merge-duplicates,return=minimal" }),
+        body: JSON.stringify(withIds.map((s) => Object.assign({ id: s.id }, sessionRow(s), { createdAt: s.createdAt || new Date().toISOString() }))),
+      });
+    }
+    const withoutIds = sessionRows.filter((s) => !s.id);
+    if (withoutIds.length) {
+      await sbFetch("", {
+        method: "POST",
+        headers: sbHeaders({ Prefer: "return=minimal" }),
+        body: JSON.stringify(withoutIds.map((s) => Object.assign(sessionRow(s), { createdAt: s.createdAt || new Date().toISOString() }))),
+      });
+    }
+    return { restored: rows.length + sessionRows.length };
   }
 
   // POST /api/save — upsert a single day's entry
@@ -198,22 +323,6 @@ async function api(path, options) {
       body: JSON.stringify(row),
     });
     return cleanEntry(Array.isArray(saved) ? saved[0] : saved);
-  }
-
-  // POST /api/restore — bulk upsert from a backup
-  if (p === "/api/restore") {
-    const items = (body && body.entries) || [];
-    const rows = items
-      .filter((i) => i && /^\d{4}-\d{2}-\d{2}$/.test(String(i.date)))
-      .map(cleanEntry);
-    if (rows.length) {
-      await sbFetch("?on_conflict=date", {
-        method: "POST",
-        headers: sbHeaders({ Prefer: "resolution=merge-duplicates,return=minimal" }),
-        body: JSON.stringify(rows),
-      });
-    }
-    return { restored: rows.length };
   }
 
   throw new Error("unknown api path: " + p);

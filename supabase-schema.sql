@@ -137,6 +137,18 @@ create policy "app key required" on public.entries
     ) = 'ea2f1f556d8bd3d5c78876db95c17998a9425d5b082ab604'
   );
 
+-- ---------------------------------------------------------------------------
+-- Force PostgREST to reload its schema cache.
+--
+-- PostgREST serves from a cached copy of the schema. If a table or column is
+-- created/edited here but that cache is stale, the very next app request fails
+-- with a PGRST205 error like "Could not find the 'category' column of
+-- 'journal_entries' in the schema cache". This reload makes the change visible
+-- immediately so the app works on the first save.
+-- ---------------------------------------------------------------------------
+
+notify pgrst, 'reload schema';
+
 -- If you prefer NO privacy gate (personal trial / public journal), drop the
 -- keyed policy above and uncomment the permissive one instead:
 --

@@ -121,6 +121,11 @@ records into separate session entries automatically.
 - **Supabase error 401/403 (RLS)** — policies not created, or the `X-App-Key`
   header doesn't match the policy. Re-run the SQL from `supabase-schema.sql`
   (or the private policy above).
+- **PGRST205 "Could not find the 'category' column … in the schema cache"** —
+  PostgREST cached a stale version of the tables. Run
+  `notify pgrst, 'reload schema';` in the SQL editor (it's already at the end
+  of `supabase-schema.sql` if you re-run that file). Then re-save the journal
+  entry.
 - **Old page / service worker** — hard refresh; the service worker cache was
   versioned (`tre-app-cloud-v3`) so it updates on new deploys.
 

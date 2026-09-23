@@ -249,6 +249,7 @@ async function api(path, options) {
         method: "PATCH",
         headers: sbHeaders({ Prefer: "return=representation" }),
         body: JSON.stringify(payload),
+        base: SB_JOURNAL_REST,
       });
       return cleanSession(Array.isArray(saved) ? saved[0] : saved);
     }
@@ -257,6 +258,7 @@ async function api(path, options) {
       method: "POST",
       headers: sbHeaders({ Prefer: "return=representation" }),
       body: JSON.stringify(payload),
+      base: SB_JOURNAL_REST,
     });
     return cleanSession(Array.isArray(saved) ? saved[0] : saved);
   }
@@ -301,6 +303,7 @@ async function api(path, options) {
         method: "POST",
         headers: sbHeaders({ Prefer: "resolution=merge-duplicates,return=minimal" }),
         body: JSON.stringify(withIds.map((s) => Object.assign({ id: s.id }, sessionRow(s), { createdAt: s.createdAt || new Date().toISOString() }))),
+        base: SB_JOURNAL_REST,
       });
     }
     const withoutIds = sessionRows.filter((s) => !s.id);
@@ -309,6 +312,7 @@ async function api(path, options) {
         method: "POST",
         headers: sbHeaders({ Prefer: "return=minimal" }),
         body: JSON.stringify(withoutIds.map((s) => Object.assign(sessionRow(s), { createdAt: s.createdAt || new Date().toISOString() }))),
+        base: SB_JOURNAL_REST,
       });
     }
     return { restored: rows.length + sessionRows.length };

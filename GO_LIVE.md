@@ -130,10 +130,10 @@ records into separate session entries automatically.
   the request went to the old `entries` table, so the browser is running a
   cached, pre-journal build of the app. Close the installed PWA completely
   (or uninstall/reinstall it, or open a fresh/incognito tab), let the updated
-  service worker cache (`tre-app-cloud-v4`) install, and reload. The journal
+  service worker cache install, and reload. The journal
   save only ever writes to `journal_entries`.
 - **Old page / service worker** — hard refresh; the service worker cache was
-  versioned (`tre-app-cloud-v4`) so it updates on new deploys.
+  versioned (`tre-app-cloud-v5`) so it updates on new deploys.
 
 ## Repo reference
 

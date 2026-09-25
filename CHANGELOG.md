@@ -10,6 +10,58 @@ This file logs fixes and notable changes with a plain-English
 
 ---
 
+## 2026-09-24 — Timers drift/pause when the screen dims; dashboard days can show out of order
+
+### Layman description
+
+Some of my practice timers counted "number of screen refreshes" instead of
+actual seconds, so when the phone screen dimmed or the app was in the
+background, the timer would slow down or stop while real time kept moving.
+Timers now measure real time and also ask the phone to keep the screen awake
+during practice. Separately, the "recent activity" days on the dashboard
+could occasionally show in the wrong order because the sort used the
+browser's language rules; it now sorts by date directly.
+
+### What was actually happening (technical)
+
+- TRE, Qi Gong, and Meditation timers all counted `setInterval` ticks
+  (`timerElapsed++`, `qgElapsed++`, `medProgress.remaining--`). Browsers
+  throttle/suspend timers when the tab is hidden or the screen dims, so the
+  count lost real time. Meditation also relied on a 1s tick for its bell/mood
+  reminders.
+- The dashboard's `renderDashRecent` sorted day blocks via
+  `String(b.date).localeCompare(...)`, whose ordering depends on the browser
+  locale and can disagree with chronological order for `YYYY-MM-DD` strings.
+
+### Fixes applied
+
+1. Wall-clock timers: all three timers now derive elapsed/remaining time from
+   `Date.now()`:
+   - TRE: added `timerRunStart` + `timerElapsedNow()`, 500ms tick that re-reads
+     wall clock (`static/app.js`); pause snapshots elapsed, resume continues.
+   - Qi Gong: same pattern with `qgRunStart`/`qgElapsedNow()`.
+   - Meditation: running phase counts down from `endAt = now + total*1000`;
+     settle phase from `settleEndAt`. Pause/resume store/skip via wall clock.
+     250ms display tick; bells/mood ticks fire only when the whole-second value
+     changes (guarded by `medProgress.lastTickRem`) so they ring once per second.
+2. Screen wake lock: `syncWakeLock()` acquires `navigator.wakeLock.request("screen")`
+   while any timer runs and releases when idle; `resyncActiveTimers()` recomputes
+   displays and re-acquires wake lock on `visibilitychange` → visible.
+3. Locale-independent date sort: `byDateDesc()` compares `YYYY-MM-DD` lexically
+   (chronological, no locale dependency); used by `sortedSessionsNewest` and
+   `renderDashRecent`.
+4. Bumped service worker cache `v4` → `v5` in `static/sw.js` so installed
+   clients pull the new code.
+
+### Verification
+
+- `node --check` passes on `static/app.js`, `static/api.js`, `static/sw.js`.
+- Wall-clock math simulation: start 2s → pause → holds; resume +1s → totals 3s.
+- `renderDashRecent` order against live Supabase data (19 journal_entries):
+  24, 23, 22, 21 Sep (correct, newest first).
+
+---
+
 ## 2026-09-22 — Journal save error: "Could not find the 'category' column of 'entries'"
 
 ### Layman description

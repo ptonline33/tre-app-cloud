@@ -22,11 +22,18 @@ function formatDate(dateStr) {
 // display never depends on the order the API happens to return.
 // Per-session journal entries: newest session first (by date, then by the
 // time the session was started/recorded so several on one day stay ordered).
+// YYYY-MM-DD dates are compared lexically, which is chronological and does
+// not depend on the browser's locale collation rules.
+function byDateDesc(a, b) {
+  const da = String(a.date);
+  const db = String(b.date);
+  return da === db ? 0 : da < db ? 1 : -1;
+}
 function sortedSessionsNewest(sessions) {
   return sessions
     .slice()
     .sort((a, b) => {
-      const d = String(b.date).localeCompare(String(a.date));
+      const d = byDateDesc(a, b);
       if (d !== 0) return d;
       const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -108,13 +115,68 @@ const onFullscreenChange = () => {
 document.addEventListener("fullscreenchange", onFullscreenChange);
 document.addEventListener("webkitfullscreenchange", onFullscreenChange);
 
+// ---------- Wake lock + timer resync ----------
+let wakeLockSentinel = null;
+function activeTimerRunning() {
+  return (
+    timerRunStart != null ||
+    qgRunStart != null ||
+    medProgress.phase === "settle" ||
+    medProgress.phase === "paused" ||
+    medProgress.phase === "running"
+  );
+}
+async function syncWakeLock() {
+  if (!("wakeLock" in navigator)) return;
+  try {
+    if (activeTimerRunning()) {
+      if (!wakeLockSentinel) {
+        wakeLockSentinel = await navigator.wakeLock.request("screen");
+        wakeLockSentinel.addEventListener("release", () => {
+          wakeLockSentinel = null;
+        });
+      }
+    } else if (wakeLockSentinel) {
+      const wl = wakeLockSentinel;
+      wakeLockSentinel = null;
+      wl.release();
+    }
+  } catch (err) {
+    wakeLockSentinel = null;
+  }
+}
+function resyncActiveTimers() {
+  if (timerRunStart != null) renderTimer();
+  if (qgRunStart != null) renderQg();
+  if (medProgress.phase === "running" && medProgress.endAt) {
+    const rem = Math.max(0, Math.ceil((medProgress.endAt - Date.now()) / 1000));
+    syncMedDisplay(fmtMed(rem));
+  }
+  syncWakeLock();
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") resyncActiveTimers();
+});
+
 // ---------- Timer ----------
 let timerInterval = null;
 let timerElapsed = 0;
+let timerRunStart = null;
 let timerGoal = 10;
+
+// Wall-clock elapsed seconds: the count is derived from Date.now() (with a
+// saved offset for paused runs) instead of counting setInterval ticks, so the
+// timer keeps accurate time even when the browser throttles or suspends the
+// interval while the screen dims or the app is in the background.
+function timerElapsedNow() {
+  return timerRunStart == null
+    ? timerElapsed
+    : timerElapsed + Math.floor((Date.now() - timerRunStart) / 1000);
+}
 function renderTimer() {
-  const s = timerElapsed % 60;
-  const m = Math.floor(timerElapsed / 60);
+  const el = timerElapsedNow();
+  const s = el % 60;
+  const m = Math.floor(el / 60);
   $("#timer-display").textContent =
     String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
 }
@@ -122,27 +184,34 @@ $("#timer-min").addEventListener("input", (e) => {
   timerGoal = Math.max(1, parseInt(e.target.value, 10) || 1);
 });
 $("#timer-start").addEventListener("click", () => {
-  if (timerInterval) {
+  if (timerRunStart != null) {
+    timerElapsed = timerElapsedNow();
     clearInterval(timerInterval);
     timerInterval = null;
+    timerRunStart = null;
     $("#timer-start").textContent = "Start";
+    syncWakeLock();
     return;
   }
-  if (timerElapsed >= timerGoal * 60) timerElapsed = 0;
+  if (timerElapsedNow() >= timerGoal * 60) timerElapsed = 0;
+  timerRunStart = Date.now();
   $("#timer-start").textContent = "Pause";
+  syncWakeLock();
   timerInterval = setInterval(() => {
-    timerElapsed++;
-    if (timerElapsed >= timerGoal * 60) {
+    const el = timerElapsedNow();
+    if (el >= timerGoal * 60) {
       clearInterval(timerInterval);
       timerInterval = null;
-      $("#timer-start").textContent = "Start";
+      timerRunStart = null;
       timerElapsed = 0;
+      $("#timer-start").textContent = "Start";
       renderTimer();
+      syncWakeLock();
       openJournalAt("tre", timerGoal);
       return;
     }
-renderTimer();
-  }, 1000);
+    renderTimer();
+  }, 500);
 });
 function timerMsg(text) {
   const el = $("#timer-msg");
@@ -154,8 +223,10 @@ $("#timer-reset").addEventListener("click", () => {
   clearInterval(timerInterval);
   timerInterval = null;
   timerElapsed = 0;
+  timerRunStart = null;
   $("#timer-start").textContent = "Start";
   renderTimer();
+  syncWakeLock();
   timerMsg("Timer reset \u2014 nothing recorded.");
 });
 $("#timer-end").addEventListener("click", endGuidedSession);
@@ -163,9 +234,11 @@ function endGuidedSession() {
   clearInterval(timerInterval);
   timerInterval = null;
   $("#timer-start").textContent = "Start";
-  const elapsedMin = Math.round(timerElapsed / 60);
+  const elapsedMin = Math.round(timerElapsedNow() / 60);
   timerElapsed = 0;
+  timerRunStart = null;
   renderTimer();
+  syncWakeLock();
   if (elapsedMin > 0) openJournalAt("tre", elapsedMin);
   else timerMsg("Session finished \u2014 log it in your Journal to count toward your stats.");
 }
@@ -174,10 +247,17 @@ renderTimer();
 // ---------- Qi Gong timer ----------
 let qgInterval = null;
 let qgElapsed = 0;
+let qgRunStart = null;
 let qgGoal = 10;
+function qgElapsedNow() {
+  return qgRunStart == null
+    ? qgElapsed
+    : qgElapsed + Math.floor((Date.now() - qgRunStart) / 1000);
+}
 function renderQg() {
-  const s = qgElapsed % 60;
-  const m = Math.floor(qgElapsed / 60);
+  const el = qgElapsedNow();
+  const s = el % 60;
+  const m = Math.floor(el / 60);
   $("#qg-display").textContent =
     String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
 }
@@ -191,38 +271,47 @@ $("#qg-min").addEventListener("input", (e) => {
   qgGoal = Math.max(1, parseInt(e.target.value, 10) || 1);
 });
 $("#qg-start").addEventListener("click", () => {
-  if (qgInterval) {
+  if (qgRunStart != null) {
+    qgElapsed = qgElapsedNow();
     clearInterval(qgInterval);
     qgInterval = null;
+    qgRunStart = null;
     $("#qg-start").textContent = "Start";
+    syncWakeLock();
     return;
   }
-  if (qgElapsed >= qgGoal * 60) qgElapsed = 0;
+  if (qgElapsedNow() >= qgGoal * 60) qgElapsed = 0;
+  qgRunStart = Date.now();
   $("#qg-start").textContent = "Pause";
   $("#qg-end").hidden = false;
+  syncWakeLock();
   qgInterval = setInterval(() => {
-    qgElapsed++;
-    if (qgElapsed >= qgGoal * 60) {
+    const el = qgElapsedNow();
+    if (el >= qgGoal * 60) {
       clearInterval(qgInterval);
       qgInterval = null;
+      qgRunStart = null;
+      qgElapsed = 0;
       $("#qg-start").textContent = "Start";
       $("#qg-end").hidden = true;
-      qgElapsed = 0;
       renderQg();
+      syncWakeLock();
       openJournalAt("qg", qgGoal);
       return;
     }
     renderQg();
-  }, 1000);
+  }, 500);
 });
 $("#qg-end").addEventListener("click", () => {
   clearInterval(qgInterval);
   qgInterval = null;
+  qgRunStart = null;
   $("#qg-start").textContent = "Start";
   $("#qg-end").hidden = true;
-  const elapsedMin = Math.round(qgElapsed / 60);
+  const elapsedMin = Math.round(qgElapsedNow() / 60);
   qgElapsed = 0;
   renderQg();
+  syncWakeLock();
   if (elapsedMin > 0) openJournalAt("qg", elapsedMin);
   else qgMsg("Practice finished \u2014 log it in your Journal to count toward your stats.");
 });
@@ -230,9 +319,11 @@ $("#qg-reset").addEventListener("click", () => {
   clearInterval(qgInterval);
   qgInterval = null;
   qgElapsed = 0;
+  qgRunStart = null;
   $("#qg-start").textContent = "Start";
   $("#qg-end").hidden = true;
   renderQg();
+  syncWakeLock();
   $("#qg-msg").textContent = "";
 });
 renderQg();
@@ -244,7 +335,7 @@ const MED_TYPES = [
 ];
 const medType = $("#med-type");
 const customWrap = $("#med-custom-wrap");
-const medProgress = { interval: null, remaining: 0, total: 0, elapsed: 0, phase: "ready", settleLeft: 0 };
+const medProgress = { interval: null, remaining: 0, total: 0, elapsed: 0, phase: "ready", settleLeft: 0, endAt: 0, settleEndAt: 0, lastTickRem: 0 };
 
 function currentMedType() {
   return medType.value === "Other"
@@ -462,67 +553,88 @@ function startMeditation() {
   if (settle > 0) {
     medProgress.phase = "settle";
     medProgress.settleLeft = settle;
+    medProgress.settleEndAt = Date.now() + settle * 1000;
+    setMedPhase("settle");
     medProgress.interval = setInterval(() => {
-      medProgress.settleLeft--;
+      medProgress.settleLeft = Math.max(0, Math.ceil((medProgress.settleEndAt - Date.now()) / 1000));
       syncMedDisplay(fmtMed(medProgress.settleLeft));
       if (medProgress.settleLeft <= 0) {
         clearInterval(medProgress.interval);
+        medProgress.interval = null;
         beginRunningPhase(total);
       }
-    }, 1000);
+    }, 250);
   } else {
     beginRunningPhase(total);
   }
   playBell();
-  setMedPhase("settle");
   $("#med-msg").textContent = "";
+  syncWakeLock();
 }
 
 function beginRunningPhase(total) {
   medProgress.remaining = total;
+  medProgress.endAt = Date.now() + total * 1000;
+  medProgress.lastTickRem = total + 1;
   setMedPhase("running");
   const intervalMin = $("#med-interval").checked ? 5 * 60 : 0;
   const lastTotal = total;
 
   medProgress.interval = setInterval(() => {
-    medProgress.remaining--;
-    medProgress.elapsed++;
-    syncMedDisplay(fmtMed(medProgress.remaining));
-    const rem = medProgress.remaining;
-    if ($("#med-last").checked && rem > 0 && rem <= 10) playTick();
-    if (intervalMin && rem > 0 && rem % intervalMin === 0 && rem !== lastTotal) playBell(0.5);
+    const rem = Math.max(0, Math.ceil((medProgress.endAt - Date.now()) / 1000));
+    medProgress.remaining = rem;
+    medProgress.elapsed = total - rem;
+    syncMedDisplay(fmtMed(rem));
+    if (rem !== medProgress.lastTickRem) {
+      if ($("#med-last").checked && rem > 0 && rem <= 10) playTick();
+      if (intervalMin && rem > 0 && rem % intervalMin === 0 && rem !== lastTotal) playBell(0.5);
+      medProgress.lastTickRem = rem;
+    }
     if (rem <= 0) {
       clearInterval(medProgress.interval);
+      medProgress.interval = null;
       finishMeditation();
     }
-  }, 1000);
+  }, 250);
 }
 
 function pauseMeditation() {
   if (medProgress.phase === "running") {
     clearInterval(medProgress.interval);
+    medProgress.interval = null;
+    medProgress.remaining = Math.max(0, Math.ceil((medProgress.endAt - Date.now()) / 1000));
+    medProgress.elapsed = medProgress.total - medProgress.remaining;
+    medProgress.endAt = 0;
     medProgress.phase = "paused";
     setMedPhase("paused");
+    syncWakeLock();
   }
 }
 
 function resumeMeditation() {
   if (medProgress.phase !== "paused") return;
   medProgress.phase = "running";
+  medProgress.endAt = Date.now() + medProgress.remaining * 1000;
+  medProgress.lastTickRem = medProgress.remaining + 1;
   setMedPhase("running");
   const intervalMin = $("#med-interval").checked ? 5 * 60 : 0;
   medProgress.interval = setInterval(() => {
-    medProgress.remaining--;
-    medProgress.elapsed++;
-    syncMedDisplay(fmtMed(medProgress.remaining));
-    const rem = medProgress.remaining;
-    if ($("#med-last").checked && rem > 0 && rem <= 10) playTick();
-    if (intervalMin && rem > 0 && rem % intervalMin === 0) playBell(0.5);
+    const rem = Math.max(0, Math.ceil((medProgress.endAt - Date.now()) / 1000));
+    medProgress.remaining = rem;
+    medProgress.elapsed = medProgress.total - rem;
+    syncMedDisplay(fmtMed(rem));
+    if (rem !== medProgress.lastTickRem) {
+      if ($("#med-last").checked && rem > 0 && rem <= 10) playTick();
+      if (intervalMin && rem > 0 && rem % intervalMin === 0) playBell(0.5);
+      medProgress.lastTickRem = rem;
+    }
     if (rem <= 0) {
       clearInterval(medProgress.interval);
+      medProgress.interval = null;
       finishMeditation();
     }
-  }, 1000);
+  }, 250);
+  syncWakeLock();
 }
 
 function endMeditation() {
@@ -533,12 +645,16 @@ function endMeditation() {
   }
   clearInterval(medProgress.interval);
   medProgress.interval = null;
+  if (medProgress.phase === "running" && medProgress.endAt) {
+    medProgress.elapsed = medProgress.total - Math.max(0, Math.ceil((medProgress.endAt - Date.now()) / 1000));
+  }
   const elapsedMin = Math.round(medProgress.elapsed / 60);
   setMedPhase("ready");
   syncMedDisplay("00:00");
   if (ambientOn()) stopAmbient();
   playEndingBell();
   exitFocusMode();
+  syncWakeLock();
   if (elapsedMin > 0) openJournalAt("med", elapsedMin);
   else $("#med-msg").textContent = "Sit finished \u2014 log it in your Journal to count toward your stats.";
 }
@@ -547,20 +663,25 @@ function resetMeditation() {
   clearInterval(medProgress.interval);
   medProgress.interval = null;
   medProgress.phase = "ready";
+  medProgress.endAt = 0;
+  medProgress.settleEndAt = 0;
   setMedPhase("ready");
   syncMedDisplay("00:00");
   if (ambientOn()) stopAmbient();
   $("#med-msg").textContent = "";
   $("#focus-status").textContent = "Ready";
+  syncWakeLock();
 }
 
 function finishMeditation() {
   medProgress.interval = null;
+  medProgress.endAt = 0;
   setMedPhase("ready");
   syncMedDisplay("00:00");
   playEndingBell();
   if (ambientOn()) stopAmbient();
   exitFocusMode();
+  syncWakeLock();
   const minutes = medProgress.elapsed > 0
     ? Math.round(medProgress.elapsed / 60)
     : Math.round(medProgress.total / 60);
@@ -1401,7 +1522,7 @@ function renderDashRecent(sessions) {
   sessions.forEach((s) => (byDate[s.date] = (byDate[s.date] || []).concat(s)));
   const days = Object.keys(byDate)
     .map((date) => ({ date, list: byDate[date] }))
-    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .sort(byDateDesc)
     .slice(0, 4);
   if (!days.length) {
     wrap.innerHTML = '<p class="muted">Nothing logged yet. Start with a practice \u2014 then write a journal entry.</p>';

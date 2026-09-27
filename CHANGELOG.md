@@ -10,6 +10,93 @@ This file logs fixes and notable changes with a plain-English
 
 ---
 
+## 2026-09-27 — Soft interval bell went silent once the phone screen dimmed
+
+### Layman description
+
+With "Soft interval bell every 5 minutes" ticked, the chime stopped turning up
+after the phone's screen dimmed — a 20-minute sit would ring two bells instead
+of three, or none at all. The bell is no longer tied to the little timer tick
+that draws the countdown, so a dimmed (or briefly backgrounded) screen can't
+skip it. The app also keeps the phone's sound engine awake for the length of a
+practice session, and puts the screen back on the "keep awake" list if the
+phone drops it. A pause/resume still won't fire a bell, and the bell at the very
+end of the sit is still the longer ending chime, not the soft one.
+
+### What was actually happening (technical)
+
+Three separate things had to line up for a bell to be heard, and all three broke
+when the screen dimmed:
+
+1. **The bell was only a coincidence of timing** (`static/app.js`, both
+   `beginRunningPhase()` and `resumeMeditation()`):
+   `if (intervalMin && rem > 0 && rem % intervalMin === 0) playBell(0.5)`.
+   `rem` is `ceil((endAt - now)/1000)`, so the bell rang only if one of the
+   250 ms ticks happened to land inside the single second where `rem` was
+   exactly a multiple of 300. Browsers throttle or suspend timers once the page
+   is occluded/backgrounded, so a stall that straddled a 5-minute boundary
+   skipped that second entirely and the bell was lost with no trace. Simulated:
+   a 2–9 minute stall gives the old code 2 of 3 bells, the new code 3 of 3.
+2. **The audio context was suspended.** `ensureAudio()` called
+   `ctx.resume()` but never waited for it, so bells were scheduled against a
+   context whose `currentTime` was frozen; when the OS had suspended the context
+   because the page was no longer foregrounded, the ring was silently dropped.
+3. **The screen wake lock was never re-armed.** The `release` handler only
+   nulled the sentinel. A screen *dim* fires no `visibilitychange` (only a
+   background/unbackground does), so the lock was gone for the rest of the sit:
+   the page then got throttled and backgrounded, feeding problems 1 and 2.
+
+### Fixes applied (`static/app.js`)
+
+- **Wall-clock interval bells**: new `MED_BELL_SEC` (5 min),
+  `syncIntervalBell(now, rem)` and `syncBellIndex()`, with
+  `medProgress.bellIndex` counting boundaries already rung
+  (`due = floor((now - startAt) / 5min)`). Any boundary that passed while the
+  tick was stalled rings **once** — never a burst — and the next bell is back on
+  the original cadence. `resyncActiveTimers()` counts off boundaries missed
+  while backgrounded silently, so there's no bell storm when you pick the phone
+  up. The fragile `rem % intervalMin === 0` check and its `lastTotal` guard are
+  gone from both tick loops.
+- **Audio keep-alive**: `startAudioKeepAlive()` runs a gain-0 oscillator for the
+  length of a session (`stopAudioKeepAlive()` tears it down), so the context
+  isn't suspended for being idle while the screen dims. `syncAudioKeepAlive()`
+  follows `activeTimerRunning()`; it is a no-op when no context exists yet, so
+  the TRE/Qi Gong timers (which make no sound) don't spin one up.
+- **`runningCtx()`**: `playBell`/`playEndingBell`/`playTick` are now async and
+  `await` a `resume()` before scheduling, and bail out (rather than queue into a
+  dead context) if the OS refuses.
+- **Wake lock re-arm**: `rearmWakeLock()` retries the request up to 4 times at
+  1.5 s while a session runs and the page is visible; `wakeLockAttempts` resets
+  on a successful request and the retry timer is cleared on release. Bounded on
+  purpose — after 4 attempts the screen is left alone so a deliberate
+  screen-off still wins.
+- **One switch for both**: `syncSessionKeepAwake()` (wake lock + audio
+  keep-alive) replaces all 16 bare `syncWakeLock()` call sites, so no timer
+  start/stop path can miss one of the two.
+- Bumped the service worker cache `v5` → `v6` in `static/sw.js` so installed
+  PWAs pull the new code.
+
+### Verification
+
+- `node --check` passes on `static/app.js` and `static/sw.js`.
+- Bell logic tested against the **real** `syncIntervalBell`/`syncBellIndex`
+  source extracted from `static/app.js` (not a copy) with a simulated clock and
+  the same 250 ms cadence as the app — 13/13 checks pass: bells at 5/10/15 min of
+  a 20-min sit; a 10-min sit rings once (5 min) and leaves the end to the ending
+  bell; a 6-minute tick stall (3→9 min) still rings 3 of 3 where the old
+  condition rings 2; a 1-minute stall straddling a boundary rings once, not a
+  burst; nothing rings at `rem === 0`; resume doesn't ring immediately and the
+  cadence continues at 10/15; the option off rings nothing; a paused sit is
+  silent.
+- Old-vs-new comparison across stall patterns (2/6/7/9-minute stalls, stalls
+  starting mid-sit): old 2 of 3 bells, new 3 of 3.
+- Not verifiable from here: real audibility on a physical phone (needs a dimmed
+  screen + speaker). If a bell is still missed, check that the sit was started
+  from the app (the first tap is what unlocks audio on iOS) and that the phone's
+  battery saver isn't force-suspending the tab.
+
+---
+
 ## 2026-09-24 — Timers drift/pause when the screen dims; dashboard days can show out of order
 
 ### Layman description

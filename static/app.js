@@ -117,6 +117,8 @@ document.addEventListener("webkitfullscreenchange", onFullscreenChange);
 
 // ---------- Wake lock + timer resync ----------
 let wakeLockSentinel = null;
+let wakeLockRetryTimer = null;
+let wakeLockAttempts = 0;
 function activeTimerRunning() {
   return (
     timerRunStart != null ||
@@ -132,18 +134,47 @@ async function syncWakeLock() {
     if (activeTimerRunning()) {
       if (!wakeLockSentinel) {
         wakeLockSentinel = await navigator.wakeLock.request("screen");
+        wakeLockAttempts = 0;
         wakeLockSentinel.addEventListener("release", () => {
           wakeLockSentinel = null;
+          rearmWakeLock();
         });
       }
     } else if (wakeLockSentinel) {
       const wl = wakeLockSentinel;
       wakeLockSentinel = null;
+      wakeLockRetryTimer && clearTimeout(wakeLockRetryTimer);
+      wakeLockRetryTimer = null;
       wl.release();
     }
   } catch (err) {
     wakeLockSentinel = null;
   }
+}
+
+// The phone drops the screen wake lock whenever the screen dims, the tab is
+// occluded, or battery saver kicks in — and nothing fires a visibilitychange for
+// a dim, so the lock was never re-acquired. Without it the page is throttled and
+// backgrounded, the audio context is suspended, and the bells go quiet. Re-arm it
+// a few bounded times while a session runs; after that the screen is left alone so
+// a deliberate screen-off still wins (the bells then ring on the next boundary).
+function rearmWakeLock() {
+  if (wakeLockSentinel || wakeLockRetryTimer || wakeLockAttempts >= 4) return;
+  if (!activeTimerRunning() || document.visibilityState !== "visible") return;
+  wakeLockRetryTimer = setTimeout(async () => {
+    wakeLockRetryTimer = null;
+    if (wakeLockSentinel || !activeTimerRunning() || document.visibilityState !== "visible") return;
+    wakeLockAttempts++;
+    await syncWakeLock();
+    if (!wakeLockSentinel) rearmWakeLock();
+  }, 1500);
+}
+
+// A running session needs the screen kept awake *and* the audio context kept
+// alive, so the two are always toggled together wherever a timer starts or stops.
+function syncSessionKeepAwake() {
+  syncWakeLock();
+  syncAudioKeepAlive();
 }
 function resyncActiveTimers() {
   if (timerRunStart != null) renderTimer();
@@ -151,8 +182,11 @@ function resyncActiveTimers() {
   if (medProgress.phase === "running" && medProgress.endAt) {
     const rem = Math.max(0, Math.ceil((medProgress.endAt - Date.now()) / 1000));
     syncMedDisplay(fmtMed(rem));
+    // Boundaries that came and went while the page was backgrounded are counted
+    // off silently: no bell burst on return, and the next bell is on time.
+    syncBellIndex();
   }
-  syncWakeLock();
+  syncSessionKeepAwake();
 }
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") resyncActiveTimers();
@@ -190,13 +224,13 @@ $("#timer-start").addEventListener("click", () => {
     timerInterval = null;
     timerRunStart = null;
     $("#timer-start").textContent = "Start";
-    syncWakeLock();
+    syncSessionKeepAwake();
     return;
   }
   if (timerElapsedNow() >= timerGoal * 60) timerElapsed = 0;
   timerRunStart = Date.now();
   $("#timer-start").textContent = "Pause";
-  syncWakeLock();
+  syncSessionKeepAwake();
   timerInterval = setInterval(() => {
     const el = timerElapsedNow();
     if (el >= timerGoal * 60) {
@@ -206,7 +240,7 @@ $("#timer-start").addEventListener("click", () => {
       timerElapsed = 0;
       $("#timer-start").textContent = "Start";
       renderTimer();
-      syncWakeLock();
+      syncSessionKeepAwake();
       openJournalAt("tre", timerGoal);
       return;
     }
@@ -226,7 +260,7 @@ $("#timer-reset").addEventListener("click", () => {
   timerRunStart = null;
   $("#timer-start").textContent = "Start";
   renderTimer();
-  syncWakeLock();
+  syncSessionKeepAwake();
   timerMsg("Timer reset \u2014 nothing recorded.");
 });
 $("#timer-end").addEventListener("click", endGuidedSession);
@@ -238,7 +272,7 @@ function endGuidedSession() {
   timerElapsed = 0;
   timerRunStart = null;
   renderTimer();
-  syncWakeLock();
+  syncSessionKeepAwake();
   if (elapsedMin > 0) openJournalAt("tre", elapsedMin);
   else timerMsg("Session finished \u2014 log it in your Journal to count toward your stats.");
 }
@@ -277,14 +311,14 @@ $("#qg-start").addEventListener("click", () => {
     qgInterval = null;
     qgRunStart = null;
     $("#qg-start").textContent = "Start";
-    syncWakeLock();
+    syncSessionKeepAwake();
     return;
   }
   if (qgElapsedNow() >= qgGoal * 60) qgElapsed = 0;
   qgRunStart = Date.now();
   $("#qg-start").textContent = "Pause";
   $("#qg-end").hidden = false;
-  syncWakeLock();
+  syncSessionKeepAwake();
   qgInterval = setInterval(() => {
     const el = qgElapsedNow();
     if (el >= qgGoal * 60) {
@@ -295,7 +329,7 @@ $("#qg-start").addEventListener("click", () => {
       $("#qg-start").textContent = "Start";
       $("#qg-end").hidden = true;
       renderQg();
-      syncWakeLock();
+      syncSessionKeepAwake();
       openJournalAt("qg", qgGoal);
       return;
     }
@@ -311,7 +345,7 @@ $("#qg-end").addEventListener("click", () => {
   const elapsedMin = Math.round(qgElapsedNow() / 60);
   qgElapsed = 0;
   renderQg();
-  syncWakeLock();
+  syncSessionKeepAwake();
   if (elapsedMin > 0) openJournalAt("qg", elapsedMin);
   else qgMsg("Practice finished \u2014 log it in your Journal to count toward your stats.");
 });
@@ -323,7 +357,7 @@ $("#qg-reset").addEventListener("click", () => {
   $("#qg-start").textContent = "Start";
   $("#qg-end").hidden = true;
   renderQg();
-  syncWakeLock();
+  syncSessionKeepAwake();
   $("#qg-msg").textContent = "";
 });
 renderQg();
@@ -335,7 +369,7 @@ const MED_TYPES = [
 ];
 const medType = $("#med-type");
 const customWrap = $("#med-custom-wrap");
-const medProgress = { interval: null, remaining: 0, total: 0, elapsed: 0, phase: "ready", settleLeft: 0, endAt: 0, settleEndAt: 0, lastTickRem: 0 };
+const medProgress = { interval: null, remaining: 0, total: 0, elapsed: 0, phase: "ready", settleLeft: 0, endAt: 0, settleEndAt: 0, lastTickRem: 0, bellIndex: 0 };
 
 function currentMedType() {
   return medType.value === "Other"
@@ -377,8 +411,54 @@ function ensureAudio() {
   return audioCtx;
 }
 
-function playBell(volume = 1) {
+// A silent oscillator holds the audio context open for the length of a practice
+// session. Browsers suspend (and therefore mute) a context whose output has
+// been idle while the screen dims, which is what used to swallow the interval
+// bells; a running source node keeps the context alive.
+let audioKeepAlive = null;
+function startAudioKeepAlive() {
+  if (!audioCtx || audioKeepAlive) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  gain.gain.value = 0; // inaudible: it only exists to keep the context running
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start();
+  audioKeepAlive = { osc, gain };
+}
+function stopAudioKeepAlive() {
+  if (!audioKeepAlive) return;
+  try {
+    audioKeepAlive.osc.stop();
+  } catch (e) {}
+  try {
+    audioKeepAlive.osc.disconnect();
+    audioKeepAlive.gain.disconnect();
+  } catch (e) {}
+  audioKeepAlive = null;
+}
+function syncAudioKeepAlive() {
+  if (activeTimerRunning()) startAudioKeepAlive();
+  else stopAudioKeepAlive();
+}
+
+// Hand back a *running* context. A context suspended by a dimmed screen or a
+// backgrounded page is resumed first (and the bell waits for it), so a ring is
+// never scheduled into a dead context where it would be silently dropped.
+async function runningCtx() {
   const ctx = ensureAudio();
+  if (!ctx) return null;
+  if (ctx.state !== "running") {
+    try {
+      await ctx.resume();
+    } catch (e) {
+      /* still suspended: the OS won't let it play until the page is foregrounded */
+    }
+  }
+  return ctx.state === "running" ? ctx : null;
+}
+
+async function playBell(volume = 1) {
+  const ctx = await runningCtx();
   if (!ctx) return;
   const t0 = ctx.currentTime;
   const dur = 3;
@@ -401,8 +481,8 @@ function playBell(volume = 1) {
 }
 
 // Distinct multi-chime ending bell so the end of the sit is unmistakable.
-function playEndingBell() {
-  const ctx = ensureAudio();
+async function playEndingBell() {
+  const ctx = await runningCtx();
   if (!ctx) return;
   const t0 = ctx.currentTime;
   const chimes = [0, 0.8, 1.6, 3.0];
@@ -425,8 +505,8 @@ function playEndingBell() {
   });
 }
 
-function playTick() {
-  const ctx = ensureAudio();
+async function playTick() {
+  const ctx = await runningCtx();
   if (!ctx) return;
   const o = ctx.createOscillator();
   const g = ctx.createGain();
@@ -449,6 +529,37 @@ function fmtMed(sec) {
 
 function medDuration() {
   return Math.max(1, parseInt($("#med-minutes").value, 10) || 1) * 60;
+}
+
+// Soft interval bell cadence.
+const MED_BELL_SEC = 5 * 60;
+
+// Interval bells are counted off the wall clock, not off the 250ms display tick.
+// The old check (`rem % 300 === 0`) only rang when a tick happened to land inside
+// the one-second boundary window, so any throttling or suspension of the tick
+// while the screen dimmed meant the bell was skipped entirely. `bellIndex` holds
+// how many boundaries have already been rung: if the tick stalled across several
+// of them, the bell rings once (never a burst of bells) and the count jumps
+// forward, so the next bell is on time again.
+function syncIntervalBell(now, rem) {
+  if (!$("#med-interval").checked) return;
+  if (medProgress.phase !== "running" || !medProgress.endAt || rem <= 0) return;
+  const startAt = medProgress.endAt - medProgress.total * 1000;
+  const due = Math.floor((now - startAt) / (MED_BELL_SEC * 1000));
+  if (due <= medProgress.bellIndex) return;
+  medProgress.bellIndex = due;
+  playBell(0.5);
+}
+
+// Count the boundaries already elapsed, without ringing: used when a run starts
+// or resumes so a bell doesn't fire the instant you press play.
+function syncBellIndex() {
+  if (!medProgress.endAt) {
+    medProgress.bellIndex = 0;
+    return;
+  }
+  const startAt = medProgress.endAt - medProgress.total * 1000;
+  medProgress.bellIndex = Math.max(0, Math.floor((Date.now() - startAt) / (MED_BELL_SEC * 1000)));
 }
 
 function setMedPhase(phase) {
@@ -569,27 +680,27 @@ function startMeditation() {
   }
   playBell();
   $("#med-msg").textContent = "";
-  syncWakeLock();
+  syncSessionKeepAwake();
 }
 
 function beginRunningPhase(total) {
   medProgress.remaining = total;
   medProgress.endAt = Date.now() + total * 1000;
   medProgress.lastTickRem = total + 1;
+  medProgress.bellIndex = 0;
   setMedPhase("running");
-  const intervalMin = $("#med-interval").checked ? 5 * 60 : 0;
-  const lastTotal = total;
 
   medProgress.interval = setInterval(() => {
-    const rem = Math.max(0, Math.ceil((medProgress.endAt - Date.now()) / 1000));
+    const now = Date.now();
+    const rem = Math.max(0, Math.ceil((medProgress.endAt - now) / 1000));
     medProgress.remaining = rem;
     medProgress.elapsed = total - rem;
     syncMedDisplay(fmtMed(rem));
     if (rem !== medProgress.lastTickRem) {
       if ($("#med-last").checked && rem > 0 && rem <= 10) playTick();
-      if (intervalMin && rem > 0 && rem % intervalMin === 0 && rem !== lastTotal) playBell(0.5);
       medProgress.lastTickRem = rem;
     }
+    syncIntervalBell(now, rem);
     if (rem <= 0) {
       clearInterval(medProgress.interval);
       medProgress.interval = null;
@@ -607,7 +718,7 @@ function pauseMeditation() {
     medProgress.endAt = 0;
     medProgress.phase = "paused";
     setMedPhase("paused");
-    syncWakeLock();
+    syncSessionKeepAwake();
   }
 }
 
@@ -616,25 +727,26 @@ function resumeMeditation() {
   medProgress.phase = "running";
   medProgress.endAt = Date.now() + medProgress.remaining * 1000;
   medProgress.lastTickRem = medProgress.remaining + 1;
+  syncBellIndex();
   setMedPhase("running");
-  const intervalMin = $("#med-interval").checked ? 5 * 60 : 0;
   medProgress.interval = setInterval(() => {
-    const rem = Math.max(0, Math.ceil((medProgress.endAt - Date.now()) / 1000));
+    const now = Date.now();
+    const rem = Math.max(0, Math.ceil((medProgress.endAt - now) / 1000));
     medProgress.remaining = rem;
     medProgress.elapsed = medProgress.total - rem;
     syncMedDisplay(fmtMed(rem));
     if (rem !== medProgress.lastTickRem) {
       if ($("#med-last").checked && rem > 0 && rem <= 10) playTick();
-      if (intervalMin && rem > 0 && rem % intervalMin === 0) playBell(0.5);
       medProgress.lastTickRem = rem;
     }
+    syncIntervalBell(now, rem);
     if (rem <= 0) {
       clearInterval(medProgress.interval);
       medProgress.interval = null;
       finishMeditation();
     }
   }, 250);
-  syncWakeLock();
+  syncSessionKeepAwake();
 }
 
 function endMeditation() {
@@ -654,7 +766,7 @@ function endMeditation() {
   if (ambientOn()) stopAmbient();
   playEndingBell();
   exitFocusMode();
-  syncWakeLock();
+  syncSessionKeepAwake();
   if (elapsedMin > 0) openJournalAt("med", elapsedMin);
   else $("#med-msg").textContent = "Sit finished \u2014 log it in your Journal to count toward your stats.";
 }
@@ -670,7 +782,7 @@ function resetMeditation() {
   if (ambientOn()) stopAmbient();
   $("#med-msg").textContent = "";
   $("#focus-status").textContent = "Ready";
-  syncWakeLock();
+  syncSessionKeepAwake();
 }
 
 function finishMeditation() {
@@ -681,7 +793,7 @@ function finishMeditation() {
   playEndingBell();
   if (ambientOn()) stopAmbient();
   exitFocusMode();
-  syncWakeLock();
+  syncSessionKeepAwake();
   const minutes = medProgress.elapsed > 0
     ? Math.round(medProgress.elapsed / 60)
     : Math.round(medProgress.total / 60);

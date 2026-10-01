@@ -183,8 +183,12 @@ function resyncActiveTimers() {
     const rem = Math.max(0, Math.ceil((medProgress.endAt - Date.now()) / 1000));
     syncMedDisplay(fmtMed(rem));
     // Boundaries that came and went while the page was backgrounded are counted
-    // off silently: no bell burst on return, and the next bell is on time.
+    // off silently: no bell burst on return, and the next bell is on time. Any
+    // bells previously queued on the audio clock are re-armed for what's left.
+    // (Only while the sit still has time left — if it's already over, leave the
+    // scheduled bells alone and let finishMeditation decide whether to ring.)
     syncBellIndex();
+    if (rem > 0) scheduleMeditationBells();
   }
   syncSessionKeepAwake();
 }
@@ -369,7 +373,7 @@ const MED_TYPES = [
 ];
 const medType = $("#med-type");
 const customWrap = $("#med-custom-wrap");
-const medProgress = { interval: null, remaining: 0, total: 0, elapsed: 0, phase: "ready", settleLeft: 0, endAt: 0, settleEndAt: 0, lastTickRem: 0, bellIndex: 0 };
+const medProgress = { interval: null, remaining: 0, total: 0, elapsed: 0, phase: "ready", settleLeft: 0, endAt: 0, settleEndAt: 0, lastTickRem: 0, bellIndex: 0, scheduledBells: [], bellsScheduled: false, endingBellAudioTime: 0 };
 
 function currentMedType() {
   return medType.value === "Other"
@@ -411,19 +415,39 @@ function ensureAudio() {
   return audioCtx;
 }
 
-// A silent oscillator holds the audio context open for the length of a practice
-// session. Browsers suspend (and therefore mute) a context whose output has
-// been idle while the screen dims, which is what used to swallow the interval
-// bells; a running source node keeps the context alive.
+// A silent audio loop holds the Web Audio context open (and the tab "playing
+// media") for the length of a practice session. Browsers suspend a context whose
+// output has been idle while the screen dims, and they freeze a silent tab — both
+// of which used to swallow the interval bells. The silent tone is routed through
+// a real <audio> element via a MediaStream, so the tab counts as actively playing
+// audio and the OS/browser won't throttle or suspend it; the Web Audio clock then
+// keeps advancing so the pre-scheduled bells ring on time even when locked.
 let audioKeepAlive = null;
 function startAudioKeepAlive() {
   if (!audioCtx || audioKeepAlive) return;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   gain.gain.value = 0; // inaudible: it only exists to keep the context running
-  osc.connect(gain).connect(audioCtx.destination);
+  osc.connect(gain);
+  let media = null;
+  try {
+    const dest = audioCtx.createMediaStreamDestination();
+    gain.connect(dest);
+    media = document.createElement("audio");
+    media.setAttribute("playsinline", "");
+    media.srcObject = dest.stream;
+    media.loop = true;
+    const p = media.play && media.play();
+    if (p && p.catch) p.catch(() => {});
+    document.body.appendChild(media);
+  } catch (e) {
+    // MediaStream routing unavailable — fall back to a direct destination.
+    try {
+      gain.connect(audioCtx.destination);
+    } catch (e2) {}
+  }
   osc.start();
-  audioKeepAlive = { osc, gain };
+  audioKeepAlive = { osc, gain, media };
 }
 function stopAudioKeepAlive() {
   if (!audioKeepAlive) return;
@@ -433,6 +457,12 @@ function stopAudioKeepAlive() {
   try {
     audioKeepAlive.osc.disconnect();
     audioKeepAlive.gain.disconnect();
+  } catch (e) {}
+  try {
+    if (audioKeepAlive.media) {
+      audioKeepAlive.media.pause();
+      audioKeepAlive.media.remove();
+    }
   } catch (e) {}
   audioKeepAlive = null;
 }
@@ -457,13 +487,11 @@ async function runningCtx() {
   return ctx.state === "running" ? ctx : null;
 }
 
-async function playBell(volume = 1) {
-  const ctx = await runningCtx();
-  if (!ctx) return;
-  const t0 = ctx.currentTime;
+// Bell node builders, usable both for a bell ringing now and for a bell
+// pre-scheduled on the Web Audio clock (see scheduleMeditationBells below).
+function buildSoftBell(ctx, t0, volume) {
   const dur = 3;
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
+  const nodes = [];
   // Rich bell: fundamental + harmonics
   [1, 2.76, 5.4, 8.9].forEach((partial, i) => {
     const o = ctx.createOscillator();
@@ -476,15 +504,14 @@ async function playBell(volume = 1) {
     o.connect(g).connect(ctx.destination);
     o.start(t0);
     o.stop(t0 + dur + 0.1);
+    nodes.push(o, g);
   });
-  osc.connect(gain).connect(ctx.destination);
+  return nodes;
 }
 
 // Distinct multi-chime ending bell so the end of the sit is unmistakable.
-async function playEndingBell() {
-  const ctx = await runningCtx();
-  if (!ctx) return;
-  const t0 = ctx.currentTime;
+function buildEndingBell(ctx, t0) {
+  const nodes = [];
   const chimes = [0, 0.8, 1.6, 3.0];
   chimes.forEach((offset, ci) => {
     const at = t0 + offset;
@@ -501,8 +528,22 @@ async function playEndingBell() {
       o.connect(g).connect(ctx.destination);
       o.start(at);
       o.stop(at + dur + 0.1);
+      nodes.push(o, g);
     });
   });
+  return nodes;
+}
+
+async function playBell(volume = 1) {
+  const ctx = await runningCtx();
+  if (!ctx) return;
+  buildSoftBell(ctx, ctx.currentTime, volume);
+}
+
+async function playEndingBell() {
+  const ctx = await runningCtx();
+  if (!ctx) return;
+  buildEndingBell(ctx, ctx.currentTime);
 }
 
 async function playTick() {
@@ -541,6 +582,56 @@ const MED_BELL_SEC = 5 * 60;
 // how many boundaries have already been rung: if the tick stalled across several
 // of them, the bell rings once (never a burst of bells) and the count jumps
 // forward, so the next bell is on time again.
+//
+// The tick is only a *fallback* though. A dimmed or locked screen can freeze the
+// tick completely, so the primary path is scheduleMeditationBells(): every future
+// interval bell and the ending bell are scheduled directly on the Web Audio clock
+// (AudioContext.currentTime), which advances in real time as long as the audio
+// context is alive (kept alive by the silent media loop above). Bells then ring
+// at the exact right moment even with no JS tick running at all.
+function scheduleMeditationBells() {
+  cancelScheduledBells();
+  if (medProgress.phase !== "running" || !medProgress.endAt) return;
+  const ctx = audioCtx;
+  if (!ctx || ctx.state !== "running") return; // nothing to schedule against yet
+  const now = Date.now();
+  const startAt = medProgress.endAt - medProgress.total * 1000;
+  if ($("#med-interval").checked) {
+    for (let k = 1; k * MED_BELL_SEC * 1000 < medProgress.total * 1000; k++) {
+      const wallMs = startAt + k * MED_BELL_SEC * 1000;
+      if (wallMs <= now) continue; // already past (e.g. resume mid-window)
+      const when = ctx.currentTime + (wallMs - now) / 1000;
+      medProgress.scheduledBells.push(...buildSoftBell(ctx, when, 0.5));
+    }
+  }
+  // Ending bell at the exact end of the sit. Remember the audio-clock time we
+  // asked for so finishMeditation can tell whether it actually rang (context
+  // stayed running) or was frozen (screen locked mid-sit) and ring it live.
+  if (medProgress.endAt > now) {
+    const when = ctx.currentTime + (medProgress.endAt - now) / 1000;
+    medProgress.endingBellAudioTime = when;
+    medProgress.scheduledBells.push(...buildEndingBell(ctx, when));
+  }
+  medProgress.bellsScheduled = medProgress.scheduledBells.length > 0;
+}
+
+// Tear down any bells pre-scheduled on the audio clock. Called on pause, end,
+// reset, and whenever the session is re-armed, so a cancelled sit never rings
+// the bells it scheduled for the future.
+function cancelScheduledBells() {
+  for (const node of medProgress.scheduledBells) {
+    try {
+      node.stop();
+    } catch (e) {}
+    try {
+      node.disconnect();
+    } catch (e) {}
+  }
+  medProgress.scheduledBells = [];
+  medProgress.bellsScheduled = false;
+  medProgress.endingBellAudioTime = 0;
+}
+
 function syncIntervalBell(now, rem) {
   if (!$("#med-interval").checked) return;
   if (medProgress.phase !== "running" || !medProgress.endAt || rem <= 0) return;
@@ -548,6 +639,11 @@ function syncIntervalBell(now, rem) {
   const due = Math.floor((now - startAt) / (MED_BELL_SEC * 1000));
   if (due <= medProgress.bellIndex) return;
   medProgress.bellIndex = due;
+  // If the bells were pre-scheduled on the audio clock AND the context is still
+  // running, the audio hardware rings them on time and this tick must not ring a
+  // duplicate. If the context was suspended the scheduled bells are frozen, so
+  // fall back to ringing here (the next visible-resync re-arms the schedule).
+  if (medProgress.bellsScheduled && audioCtx && audioCtx.state === "running") return;
   playBell(0.5);
 }
 
@@ -688,7 +784,9 @@ function beginRunningPhase(total) {
   medProgress.endAt = Date.now() + total * 1000;
   medProgress.lastTickRem = total + 1;
   medProgress.bellIndex = 0;
+  medProgress.endingBellAudioTime = 0;
   setMedPhase("running");
+  scheduleMeditationBells();
 
   medProgress.interval = setInterval(() => {
     const now = Date.now();
@@ -713,6 +811,7 @@ function pauseMeditation() {
   if (medProgress.phase === "running") {
     clearInterval(medProgress.interval);
     medProgress.interval = null;
+    cancelScheduledBells();
     medProgress.remaining = Math.max(0, Math.ceil((medProgress.endAt - Date.now()) / 1000));
     medProgress.elapsed = medProgress.total - medProgress.remaining;
     medProgress.endAt = 0;
@@ -729,6 +828,7 @@ function resumeMeditation() {
   medProgress.lastTickRem = medProgress.remaining + 1;
   syncBellIndex();
   setMedPhase("running");
+  scheduleMeditationBells();
   medProgress.interval = setInterval(() => {
     const now = Date.now();
     const rem = Math.max(0, Math.ceil((medProgress.endAt - now) / 1000));
@@ -757,6 +857,7 @@ function endMeditation() {
   }
   clearInterval(medProgress.interval);
   medProgress.interval = null;
+  cancelScheduledBells();
   if (medProgress.phase === "running" && medProgress.endAt) {
     medProgress.elapsed = medProgress.total - Math.max(0, Math.ceil((medProgress.endAt - Date.now()) / 1000));
   }
@@ -774,6 +875,7 @@ function endMeditation() {
 function resetMeditation() {
   clearInterval(medProgress.interval);
   medProgress.interval = null;
+  cancelScheduledBells();
   medProgress.phase = "ready";
   medProgress.endAt = 0;
   medProgress.settleEndAt = 0;
@@ -788,9 +890,28 @@ function resetMeditation() {
 function finishMeditation() {
   medProgress.interval = null;
   medProgress.endAt = 0;
+  // Did the pre-scheduled ending bell actually fire? It fires on the audio clock
+  // only if the context stayed running through the end of the sit. If the audio
+  // context was suspended (locked screen), currentTime froze and the bell never
+  // rang — so ring it live here.
+  const endingRang =
+    medProgress.endingBellAudioTime > 0 &&
+    audioCtx &&
+    audioCtx.state === "running" &&
+    audioCtx.currentTime >= medProgress.endingBellAudioTime;
+  if (endingRang) {
+    // It already played (or is playing) — let it ring out; just clear tracking.
+    medProgress.scheduledBells = [];
+    medProgress.bellsScheduled = false;
+    medProgress.endingBellAudioTime = 0;
+  } else {
+    // The scheduled bells were frozen in a suspended context; tear them down so
+    // they can't fire late when the context resumes, then ring the ending live.
+    cancelScheduledBells();
+  }
   setMedPhase("ready");
   syncMedDisplay("00:00");
-  playEndingBell();
+  if (!endingRang) playEndingBell();
   if (ambientOn()) stopAmbient();
   exitFocusMode();
   syncSessionKeepAwake();
@@ -924,6 +1045,12 @@ $("#focus-pause").addEventListener("click", pauseMeditation);
 $("#focus-resume").addEventListener("click", resumeMeditation);
 $("#focus-end").addEventListener("click", endMeditation);
 $("#focus-reset").addEventListener("click", resetMeditation);
+// Toggling the interval bell mid-sit re-arms (or cancels) the bells that were
+// pre-scheduled on the audio clock, so the change takes effect for the rest of
+// the current sit instead of waiting for the next one.
+$("#med-interval").addEventListener("change", () => {
+  if (medProgress.phase === "running") scheduleMeditationBells();
+});
 $("#med-ambient").addEventListener("change", () => {
   syncAmbientCheckboxes();
   if (medProgress.phase === "running" || medProgress.phase === "paused" || medProgress.phase === "settle") {

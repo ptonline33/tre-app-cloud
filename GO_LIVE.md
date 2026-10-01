@@ -133,16 +133,17 @@ records into separate session entries automatically.
   service worker cache install, and reload. The journal
   save only ever writes to `journal_entries`.
 - **Old page / service worker** — hard refresh; the service worker cache was
-  versioned (`tre-app-cloud-v6`) so it updates on new deploys.
+  versioned (`tre-app-cloud-v7`) so it updates on new deploys.
 - **No bell (or no sound at all) during a sit** — the bells need the audio
   context unlocked by a tap, so always start the sit from the app (a bell never
   plays on a page loaded in the background or on iOS without a user gesture).
-  If the bell is missing only when the screen dims, check for a battery saver /
-  "app hibernation" feature (Samsung, Xiaomi, One UI, iOS Low Power) that freezes
-  the tab — those suspend Web Audio and JS timers in a way no web page can
-  override. The app holds a silent audio keep-alive and re-arms the screen wake
-  lock to survive ordinary dimming; an aggressive OS battery setting is the one
-  remaining cause. See the 2026-09-27 entry in `CHANGELOG.md`.
+  Interval and ending bells are pre-scheduled on the Web Audio clock when the sit
+  starts and the app holds a silent media keep-alive so the tab isn't frozen, so
+  bells ring on time even while the screen is dimmed or locked. If a bell is
+  still missed, check for a battery saver / "app hibernation" feature (Samsung,
+  Xiaomi, One UI, iOS Low Power) that force-freezes the tab — those suspend Web
+  Audio and JS timers in a way no web page can override. See the 2026-10-01 entry
+  in `CHANGELOG.md`.
 
 ## Repo reference
 

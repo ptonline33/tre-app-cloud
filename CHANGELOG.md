@@ -10,7 +10,84 @@ This file logs fixes and notable changes with a plain-English
 
 ---
 
-## 2026-09-27 — Soft interval bell went silent once the phone screen dimmed
+## 2026-10-01 — Soft interval bell and ending bell silent on a dimmed or locked phone
+
+### Layman description
+
+The 5-minute soft bell and the end-of-sit bell still went silent once the phone
+screen dimmed or the phone locked, even though the previous fix made the bells
+"wall-clock accurate". The trouble: the bells were still only *rung* from inside
+the little 250ms countdown tick — so whenever the browser froze that tick (which
+is exactly what a dimmed or locked screen does), the bell code never ran at all.
+Now the bells are booked in advance on the phone's *sound clock* the moment the
+sit starts, like setting an alarm that doesn't need the app awake: even with no
+JS running at all, the sound hardware rings at 5/10/15 minutes and at the end.
+The app also now keeps itself counted as "playing audio" (a silent loop through
+a real audio element) so the browser won't freeze the tab the way it used to.
+
+### What was actually happening (technical)
+
+Even after the 2026-09-27 fix, `syncIntervalBell()` was still only invoked from
+the 250ms `setInterval` tick in `beginRunningPhase()`/`resumeMeditation()`. When
+the screen dims or the phone locks, Chromium throttles background tabs to about
+1 tick/minute and suspends them entirely when locked, so the tick either never
+ran near a boundary or never ran at all — no bell, and no ending bell either
+(`finishMeditation()` also only ran from that tick). The wall-clock `bellIndex`
+counting fixed *timing*, not *delivery*: a bell whose ring moment passed while
+no tick ran was simply never sounded.
+
+Additionally, the audio keep-alive used a gain-0 oscillator connected straight
+to `audioCtx.destination` — Chromium still suspended that context as "idle",
+freezing the whole Web Audio graph.
+
+### Fixes applied (`static/app.js`, `static/sw.js`)
+
+1. **Pre-scheduled bells on the Web Audio clock.** New `scheduleMeditationBells()`
+   runs when the running phase begins (`beginRunningPhase()`) and resumes
+   (`resumeMeditation()`), and asks the audio clock (`AudioContext.currentTime`)
+   to play each future interval bell and the ending bell at its exact time
+   (`ctx.currentTime + (wallMs - now)/1000`). Because the audio clock advances in
+   real time as long as the context is alive, the bells ring on time even with
+   zero JS running. The 250ms tick's `syncIntervalBell()` is now only a fallback
+   (it rings when the context is suspended and the scheduled bells are frozen),
+   and it no longer double-rings when the audio-clock bells are in charge
+   (`if (medProgress.bellsScheduled && audioCtx.state === "running") return`).
+2. **Silent media keep-alive.** `startAudioKeepAlive()` now routes the silent
+   tone through `audioCtx.createMediaStreamDestination()` into a real `<audio>`
+   element (`media.srcObject = dest.stream; media.play()`), so the tab counts as
+   actively playing audio and the OS/browser won't throttle or suspend it — which
+   is what keeps the audio clock, and therefore the pre-scheduled bells, running
+   through a dimmed or locked screen. Falls back to the old direct-destination
+   connection if MediaStream routing is unavailable.
+3. **Lifecycle hygiene.** `pauseMeditation()`, `endMeditation()`, `resetMeditation()`
+   call `cancelScheduledBells()` so a cancelled/paused sit never rings bells it
+   booked for the future. `resyncActiveTimers()` (visible again) re-arms the
+   schedule for what's left. `finishMeditation()` checks `endingBellAudioTime`
+   against the live context to decide whether the ending bell already rang and
+   only rings it live if the audio context was frozen at the end.
+4. **Mid-sit toggling.** Toggling the "Soft interval bell" checkbox mid-sit
+   re-arms (or cancels) the pre-scheduled bells.
+5. Bumped the service worker cache `v6` → `v7` in `static/sw.js` so installed
+   PWAs pull the new code.
+
+### Verification
+
+- `node --check` passes on `static/app.js` and `static/sw.js`.
+- Extracted the real `scheduleMeditationBells`/`syncIntervalBell`/`syncBellIndex`/
+  `cancelScheduledBells` source from `static/app.js` (not a copy) and drove it
+  with a simulated wall clock + fake AudioContext — 18/18 checks pass: a 20-min
+  sit books bells at 5/10/15 min + ending at 20; a 10-min sit books the 5-min
+  soft bell + ending; resume mid-window skips the already-past boundary; the tick
+  does not double-ring when the audio clock is in charge; a suspended context
+  makes the tick fallback ring once; the option off books only the ending bell;
+  pause cancels booked bells; the ending-bell "did it ring?" decision is true for
+  a running context and false for a frozen one.
+- Not verifiable from here: real audibility on a physical phone with the screen
+  locked. If a bell is still missed, check the phone's battery saver / "app
+  hibernation" (Samsung/Xiaomi/iOS Low Power) is not force-killing the tab — no
+  web page can override an OS-level freeze, and that is the one remaining cause.
+
+---
 
 ### Layman description
 
